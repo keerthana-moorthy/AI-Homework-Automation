@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { setActiveScreen, setLoggedIn } from '../../store/slices/appSlice';
+import { hydrateSession, setActiveScreen } from '../../store/slices/appSlice';
 import { 
   Home, 
   Camera, 
@@ -10,6 +10,7 @@ import {
   HelpCircle, 
   LogOut 
 } from 'lucide-react';
+import { logout as logoutSession, toUserState, updateScreen } from '../../services/api';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -19,6 +20,7 @@ interface SidebarProps {
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector((state) => state.app.activeScreen);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   const menuItems = [
     { name: 'Dashboard', icon: Home, screen: 0 },
@@ -31,12 +33,31 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
 
   const handleNav = (screen: number) => {
     dispatch(setActiveScreen(screen));
+    void updateScreen(screen).catch((error) => {
+      console.error('Unable to persist screen change', error);
+    });
     setIsOpen(false); // Close sidebar on mobile after clicking
   };
 
-  const handleLogout = () => {
-    dispatch(setLoggedIn(false));
-    dispatch(setActiveScreen(1)); // return to onboarding
+  const handleLogout = async () => {
+    setIsSigningOut(true);
+    try {
+      const response = await logoutSession();
+      dispatch(
+        hydrateSession({
+          loggedIn: response.session.loggedIn,
+          activeScreen: response.session.activeScreen,
+          language: response.session.language,
+          selectedSubjectId: response.session.selectedSubjectId,
+          user: toUserState(response.user),
+        })
+      );
+      setIsOpen(false);
+    } catch (error) {
+      console.error('Unable to sign out', error);
+    } finally {
+      setIsSigningOut(false);
+    }
   };
 
   return (
@@ -50,7 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
       )}
 
       <aside className={`
-        fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-150 z-40
+        fixed inset-y-0 left-0 w-64 bg-white border-r border-gray-100 z-40
         transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:h-screen flex flex-col
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
@@ -93,10 +114,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
         <div className="p-4 border-t border-gray-100 shrink-0">
           <button
             onClick={handleLogout}
+            disabled={isSigningOut}
             className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-nunito font-extrabold text-sm text-red-500 hover:bg-red-50/80 transition-all duration-150"
           >
             <LogOut className="w-5 h-5 shrink-0" />
-            <span>Sign Out</span>
+            <span>{isSigningOut ? 'Signing out...' : 'Sign Out'}</span>
           </button>
         </div>
       </aside>

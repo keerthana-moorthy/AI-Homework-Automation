@@ -1,0 +1,14 @@
+fastapi==0.115.8
+uvicorn==0.34.0
+SQLAlchemy==2.0.38
+pydantic==2.10.6
+websockets==16.0
+groq
+pymupdf
+numpy
+opencv-python
+easyocr
+sentence-transformers
+transformers
+sympy
+faiss-cpu

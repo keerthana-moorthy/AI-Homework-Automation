@@ -59,4 +59,15 @@ export interface UserState {
   streak: number;
   xpPoints: number;
   level: string;
+  language?: 'en' | 'ta' | 'both';
+  loggedIn?: boolean;
+  activeScreen?: number;
+  selectedSubjectId?: string | null;
+  homeworkCompleted?: number;
+  doubtsSolved?: number;
+  quizCorrect?: number;
+  quizAnswered?: number;
+  quizCurrentIndex?: number;
+  quizStatus?: string;
+  subscriptionPlan?: string;
 }

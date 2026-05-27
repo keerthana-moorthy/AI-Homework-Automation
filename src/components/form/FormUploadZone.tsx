@@ -86,6 +86,7 @@ export const FormUploadZone: React.FC<FormUploadZoneProps> = ({
               {((value.size || 0) / 1024 / 1024).toFixed(2)} MB
             </div>
             <button 
+              type="button"
               onClick={removeFile}
               className="mt-4 px-3 py-1 bg-red-50 text-red-500 rounded-full text-xs font-black hover:bg-red-100 transition-colors border-none"
             >

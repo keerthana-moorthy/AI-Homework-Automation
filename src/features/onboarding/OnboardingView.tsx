@@ -1,15 +1,32 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAppDispatch } from '../../store';
-import { setActiveScreen, setLoggedIn } from '../../store/slices/appSlice';
+import { hydrateSession } from '../../store/slices/appSlice';
 import { ONBOARDING_FEATURES } from '../../constants/mockData';
 import Button from '../../components/common/Button';
+import { login, toUserState } from '../../services/api';
 
 export const OnboardingView: React.FC = () => {
   const dispatch = useAppDispatch();
+  const [isStarting, setIsStarting] = useState(false);
 
-  const handleStart = () => {
-    dispatch(setLoggedIn(true));
-    dispatch(setActiveScreen(0)); // go to dashboard
+  const handleStart = async () => {
+    setIsStarting(true);
+    try {
+      const response = await login();
+      dispatch(
+        hydrateSession({
+          loggedIn: response.session.loggedIn,
+          activeScreen: response.session.activeScreen,
+          language: response.session.language,
+          selectedSubjectId: response.session.selectedSubjectId,
+          user: toUserState(response.user),
+        })
+      );
+    } catch (error) {
+      console.error('Unable to start session', error);
+    } finally {
+      setIsStarting(false);
+    }
   };
 
   // Helper to resolve colored icon backgrounds from design
@@ -76,15 +93,17 @@ export const OnboardingView: React.FC = () => {
               variant="primary" 
               onClick={handleStart} 
               className="w-full"
+              disabled={isStarting}
             >
-              Let's Start! 🚀
+              {isStarting ? 'Starting...' : "Let's Start! 🚀"}
             </Button>
             <Button 
               variant="secondary" 
               onClick={handleStart} 
               className="w-full"
+              disabled={isStarting}
             >
-              I already have an account
+              {isStarting ? 'Please wait...' : 'I already have an account'}
             </Button>
           </div>
         </div>

@@ -132,6 +132,9 @@ export interface QuizStatePayload {
   xpEarnedThisSession: number;
   toastMessage: string | null;
   progressPercent: number;
+  topic?: string | null;
+  title?: string | null;
+  subjectId?: string | null;
 }
 
 export interface ParentPayload {

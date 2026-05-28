@@ -32,15 +32,15 @@ def _collect_context_lines(analysis: dict[str, Any] | None) -> list[str]:
     subject = analysis.get("detectedSubject") if isinstance(analysis.get("detectedSubject"), dict) else {}
     lines = [
         f"Analysis ID: {analysis.get('analysisId') or analysis.get('id') or 'latest'}",
-        f"Question: {normalize_text(analysis.get('questionText') or analysis.get('question')) or 'Not available'}",
+        f"Question: {normalize_text(analysis.get('questionText') or analysis.get('question')) or 'Unavailable'}",
         f"Subject: {normalize_text(subject.get('id') or analysis.get('sourceSubject') or 'maths')}",
         f"Scan method: {normalize_text(analysis.get('scanMethod') or scan.get('scanMethod') or 'text')}",
         f"Source type: {normalize_text(analysis.get('sourceType') or scan.get('sourceKind') or 'text')}",
-        f"File name: {normalize_text(analysis.get('fileName') or scan.get('fileName')) or 'Not available'}",
-        f"Summary: {normalize_text(analysis.get('summary') or scan.get('summary')) or 'Not available'}",
-        f"Detailed explanation: {normalize_text(analysis.get('detailedExplanation') or scan.get('detailedExplanation')) or 'Not available'}",
-        f"Final answer: {normalize_text(analysis.get('finalAnswer')) or 'Not available'}",
-        f"Extracted text: {normalize_text(analysis.get('extractedText') or scan.get('extractedText')) or 'Not available'}",
+        f"File name: {normalize_text(analysis.get('fileName') or scan.get('fileName')) or 'Unavailable'}",
+        f"Summary: {normalize_text(analysis.get('summary') or scan.get('summary')) or 'Unavailable'}",
+        f"Detailed explanation: {normalize_text(analysis.get('detailedExplanation') or scan.get('detailedExplanation')) or 'Unavailable'}",
+        f"Final answer: {normalize_text(analysis.get('finalAnswer')) or 'Unavailable'}",
+        f"Extracted text: {normalize_text(analysis.get('extractedText') or scan.get('extractedText')) or 'Unavailable'}",
     ]
 
     page_count = analysis.get("pageCount") or scan.get("pageCount")

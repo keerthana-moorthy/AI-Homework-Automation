@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
@@ -9,6 +10,9 @@ try:  # Optional dependency.
     import fitz  # type: ignore
 except ImportError:  # pragma: no cover - handled at runtime.
     fitz = None
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(slots=True)
@@ -30,19 +34,30 @@ class DocumentRouteDecision:
 
 def _pdf_text_preview(file_bytes: bytes, max_pages: int = 3) -> tuple[int, str]:
     if fitz is None:
+        LOGGER.warning("PyMuPDF is not installed; PDF routing will rely on OCR heuristics.")
         return 0, ""
 
     try:
         doc = fitz.open(stream=file_bytes, filetype="pdf")
     except Exception:  # noqa: BLE001
+        LOGGER.exception("Could not open the uploaded PDF while routing.")
         return 0, ""
 
-    page_count = doc.page_count
-    texts: list[str] = []
-    for index in range(min(page_count, max_pages)):
-        page = doc.load_page(index)
-        texts.append(normalize_text(page.get_text("text")))
-    return page_count, normalize_text(" ".join(texts))
+    try:
+        page_count = doc.page_count
+        texts: list[str] = []
+        for index in range(min(page_count, max_pages)):
+            try:
+                page = doc.load_page(index)
+                texts.append(normalize_text(page.get_text("text")))
+            except Exception as exc:  # noqa: BLE001
+                LOGGER.warning("Could not inspect PDF page %s while routing: %s", index + 1, exc)
+        return page_count, normalize_text(" ".join(texts))
+    finally:
+        try:
+            doc.close()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def route_document(
@@ -59,10 +74,10 @@ def route_document(
     if file_type_normalized == "application/pdf" or file_name_normalized.endswith(".pdf"):
         page_count, preview_text = _pdf_text_preview(file_bytes or b"")
         combined_hint = hint or preview_text
-        if preview_text and len(preview_text) > 180:
+        if preview_text:
             route = "native_pdf"
-            confidence = 0.96
-            reasons = ["PDF text extraction produced a readable text layer."]
+            confidence = 0.98 if len(preview_text) > 40 else 0.9
+            reasons = ["PDF contains selectable text and PyMuPDF can extract it directly."]
         elif page_count:
             route = "scanned_pdf"
             confidence = 0.86

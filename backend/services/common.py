@@ -11,6 +11,11 @@ from typing import Any, Iterable
 
 import numpy as np
 
+try:  # Optional dependency for LangChain-based chunking.
+    from langchain_text_splitters import RecursiveCharacterTextSplitter  # type: ignore
+except Exception:  # pragma: no cover - handled at runtime.
+    RecursiveCharacterTextSplitter = None
+
 STOPWORDS = {
     "a",
     "an",
@@ -96,7 +101,20 @@ def tokenize(text: str | None) -> list[str]:
 
 
 def chunk_text(text: str | None, chunk_size: int = 180, overlap: int = 40) -> list[str]:
-    tokens = tokenize(text)
+    normalized = normalize_text(text)
+    if not normalized:
+        return []
+
+    if RecursiveCharacterTextSplitter is not None:
+        splitter = RecursiveCharacterTextSplitter(
+            chunk_size=max(400, chunk_size * 8),
+            chunk_overlap=max(50, overlap * 6),
+            separators=["\n\n", "\n", ". ", "? ", "! ", "; ", ", ", " ", ""],
+        )
+        chunks = [normalize_text(chunk) for chunk in splitter.split_text(normalized)]
+        return [chunk for chunk in chunks if chunk]
+
+    tokens = tokenize(normalized)
     if not tokens:
         return []
 

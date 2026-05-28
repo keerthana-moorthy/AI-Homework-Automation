@@ -132,6 +132,9 @@ def build_adaptive_quiz_state(session: AdaptiveQuizSession) -> QuizStateOut:
         else ("Oops! That's incorrect. Try again!" if status == "wrong" else None)
     )
     progress_percent = ((current_index + 1) / max(1, len(questions))) * 100 if questions else 0.0
+    topic = normalize_text(payload.get("topic")) or session.topic
+    title = normalize_text(payload.get("title")) or session.title
+    subject_id = normalize_text(payload.get("subjectId")) or session.subject_id
 
     return QuizStateOut(
         questions=questions,
@@ -142,6 +145,9 @@ def build_adaptive_quiz_state(session: AdaptiveQuizSession) -> QuizStateOut:
         xp_earned_this_session=payload["xpEarned"],
         toast_message=toast_message,
         progress_percent=progress_percent,
+        topic=topic or None,
+        title=title or None,
+        subject_id=subject_id or None,
     )
 
 

@@ -270,10 +270,10 @@ class DoubtService:
         context_summary = "\n".join(
             [
                 f"Analysis ID: {active_analysis_id or 'latest'}",
-                f"Homework question: {normalize_text(analysis_payload.get('questionText') if analysis_payload else '') or 'Not available'}",
-                f"Summary: {normalize_text(analysis_payload.get('summary') if analysis_payload else '') or 'Not available'}",
-                f"Detailed explanation: {normalize_text(analysis_payload.get('detailedExplanation') if analysis_payload else '') or 'Not available'}",
-                f"Final answer: {normalize_text(analysis_payload.get('finalAnswer') if analysis_payload else '') or 'Not available'}",
+                f"Homework question: {normalize_text(analysis_payload.get('questionText') if analysis_payload else '') or 'Unavailable'}",
+                f"Summary: {normalize_text(analysis_payload.get('summary') if analysis_payload else '') or 'Unavailable'}",
+                f"Detailed explanation: {normalize_text(analysis_payload.get('detailedExplanation') if analysis_payload else '') or 'Unavailable'}",
+                f"Final answer: {normalize_text(analysis_payload.get('finalAnswer') if analysis_payload else '') or 'Unavailable'}",
                 f"Retrieved context:\n{context_text or 'No extra context retrieved.'}",
             ]
         )

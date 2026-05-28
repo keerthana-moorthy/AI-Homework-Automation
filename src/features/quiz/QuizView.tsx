@@ -39,6 +39,8 @@ export const QuizView: React.FC = () => {
 
   const currentQuestion = quizData?.currentQuestion ?? quizData?.questions?.[quizData?.currentIndex ?? 0];
   const progressPercent = quizData?.progressPercent ?? 0;
+  const quizTopicLabel = quizData?.topic?.trim() || 'Generated from your upload';
+  const quizTitle = quizData?.title?.trim() || (quizData?.topic?.trim() ? `${quizData.topic} quiz` : 'Practice quiz');
 
   const handleOptionClick = async (option: string) => {
     if (!quizData || quizData.status !== 'idle') return;
@@ -110,7 +112,7 @@ export const QuizView: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 mb-0.5">
                 <Badge variant="white">⚡ Quick Quiz</Badge>
-                <span className="text-[10px] text-white/80 font-black uppercase tracking-wider">Algebra Revision</span>
+                <span className="text-[10px] text-white/80 font-black uppercase tracking-wider">{quizTopicLabel}</span>
               </div>
               <h3 className="text-base md:text-lg font-black leading-tight">Loading quiz...</h3>
             </div>
@@ -129,9 +131,9 @@ export const QuizView: React.FC = () => {
             <div>
               <div className="flex items-center gap-2 mb-0.5">
                 <Badge variant="white">⚡ Quick Quiz</Badge>
-                <span className="text-[10px] text-white/80 font-black uppercase tracking-wider">Algebra Revision</span>
+                <span className="text-[10px] text-white/80 font-black uppercase tracking-wider">{quizTopicLabel}</span>
               </div>
-              <h3 className="text-base md:text-lg font-black leading-tight">Algebra Practice</h3>
+              <h3 className="text-base md:text-lg font-black leading-tight">{quizTitle}</h3>
             </div>
           </div>
 

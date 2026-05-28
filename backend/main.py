@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,7 @@ from .schemas import (
     UserOut,
 )
 from .services.analytics_service import build_recommendations, build_student_analytics
+from .services.common import normalize_text
 from .services.orchestrator import get_vidya_ai_core
 from .services.rag_service import get_rag_service
 from .services.planner import build_daily_plan, build_insights
@@ -68,6 +70,8 @@ from .services.quiz_service import build_adaptive_quiz_state, get_quiz_service
 from .services.chat import answer_explanation_chat
 from .services.solver import explanation_from_analysis
 from .websocket_manager import ConnectionManager
+
+LOGGER = logging.getLogger(__name__)
 
 BASE_DIR = Path(__file__).resolve().parent
 UPLOAD_DIR = BASE_DIR / "uploads"
@@ -293,6 +297,13 @@ def build_quiz_state(db: Session, user: UserProfile) -> dict[str, Any]:
         db.add(adaptive_session)
         db.commit()
 
+    analysis_payload = latest_analysis_payload(db, user)
+    subject_hint = ""
+    if analysis_payload and isinstance(analysis_payload.get("detectedSubject"), dict):
+        subject_hint = normalize_text(analysis_payload["detectedSubject"].get("name") or analysis_payload["detectedSubject"].get("id"))
+    subject_hint = subject_hint or normalize_text(user.selected_subject_id) or "practice"
+    title = "Practice quiz" if subject_hint == "practice" else f"{subject_hint.title()} practice quiz"
+
     questions = [serialize_question(question) for question in db.scalars(select(QuizQuestion).order_by(QuizQuestion.id.asc())).all()]
     current_index = user.quiz_current_index % len(questions) if questions else 0
     current_question = questions[current_index] if questions else None
@@ -309,6 +320,9 @@ def build_quiz_state(db: Session, user: UserProfile) -> dict[str, Any]:
             else ("Oops! That's incorrect. Try again!" if user.quiz_status == "wrong" else None)
         ),
         progress_percent=((current_index + 1) / max(1, len(questions))) * 100,
+        topic=subject_hint,
+        title=title,
+        subject_id=user.selected_subject_id or None,
     ).model_dump(by_alias=True, exclude_none=True)
 
 
@@ -563,6 +577,134 @@ def save_uploaded_file(
 
 def touch_user_level(user: UserProfile) -> None:
     user.level = level_for_xp(user.xp_points)
+
+
+async def _analyze_homework_request(payload: HomeworkAnalyzeRequest, db: Session) -> dict[str, Any]:
+    user = get_primary_user(db)
+
+    file_name = payload.file_name
+    file_type = payload.file_type
+    file_url = None
+    saved_file_name = None
+    file_bytes = None
+
+    try:
+        if payload.file_data_base64:
+            saved_file_name, file_url, file_bytes = save_uploaded_file(payload.file_name, payload.file_type, payload.file_data_base64)
+            file_name = file_name or saved_file_name
+            if (file_type or "").lower() == "application/pdf" or (file_name or "").lower().endswith(".pdf"):
+                print("PDF uploaded successfully")
+
+        print("OCR started")
+        pipeline = get_vidya_ai_core().analyze_homework(
+            db=db,
+            user=user,
+            file_name=file_name,
+            file_type=file_type,
+            file_bytes=file_bytes,
+            input_method=payload.input_method,
+            subject=payload.subject or user.selected_subject_id,
+            language=payload.language,
+            question_text=payload.question_text,
+            transcript=payload.transcript,
+            notes=payload.notes,
+            ocr_text=payload.ocr_text,
+        )
+        analysis_result = pipeline.analysis_payload
+        scan_context = dict(analysis_result.get("scan") or {})
+        detected_subject = analysis_result.get("detectedSubject") or {"id": payload.subject or user.selected_subject_id or "maths", "confidence": 0.5, "reason": "Fallback subject."}
+        user.selected_subject_id = detected_subject["id"]
+        user.doubts_solved += 1
+        if analysis_result.get("status") == "ok":
+            user.homework_completed += 1
+
+        scan_context_storage = dict(scan_context)
+        scan_context_storage.pop("pageImages", None)
+
+        if scan_context_storage.get("questionText"):
+            analysis_result["questionText"] = scan_context_storage["questionText"]
+        analysis_result["source"] = analysis_result.get("scanMethod") or payload.input_method
+        analysis_result["scanMethod"] = analysis_result.get("scanMethod") or scan_context_storage.get("scanMethod")
+        analysis_result["sourceType"] = analysis_result.get("sourceType") or scan_context_storage.get("sourceKind")
+        analysis_result["extractedText"] = analysis_result.get("extractedText") or scan_context_storage.get("extractedText")
+        analysis_result["pageCount"] = analysis_result.get("pageCount") or scan_context_storage.get("pageCount")
+        analysis_result["detailedExplanation"] = (
+            analysis_result.get("detailedExplanation")
+            or scan_context_storage.get("detailedExplanation")
+            or analysis_result.get("summary")
+        )
+        analysis_result["summary"] = analysis_result.get("summary") or scan_context_storage.get("summary")
+        if not analysis_result.get("recommendations") and scan_context_storage.get("recommendations"):
+            analysis_result["recommendations"] = scan_context_storage.get("recommendations")
+        if not analysis_result.get("steps") and scan_context_storage.get("steps"):
+            analysis_result["steps"] = scan_context_storage.get("steps")
+
+        extracted_preview = normalize_text(analysis_result.get("extractedText") or scan_context_storage.get("extractedText") or "")
+        if extracted_preview:
+            print("Extracted text:", extracted_preview[:500])
+        else:
+            print("Extracted text: [empty]")
+
+        analysis = HomeworkAnalysis(
+            user_id=user.id,
+            input_method=payload.input_method,
+            language=payload.language,
+            subject_id=payload.subject or detected_subject["id"],
+            detected_subject_id=detected_subject["id"],
+            confidence=float(detected_subject.get("confidence", 0.5)),
+            question_text=analysis_result.get("questionText") or payload.question_text or payload.transcript or payload.ocr_text or payload.notes or "",
+            extracted_equation=analysis_result.get("extractedEquation"),
+            final_answer=analysis_result.get("finalAnswer"),
+            variable=analysis_result.get("variable"),
+            status=analysis_result.get("status", "needs_review"),
+            steps=analysis_result.get("steps", []),
+            quiz=analysis_result.get("quiz", {}),
+            recommendations=analysis_result.get("recommendations", []),
+            raw_payload={**analysis_result, "scan": scan_context_storage},
+            file_name=file_name,
+            file_type=file_type,
+            file_path=saved_file_name,
+            transcript=payload.transcript or payload.ocr_text or payload.notes,
+            summary=analysis_result.get("summary"),
+        )
+        db.add(analysis)
+        db.flush()
+
+        get_rag_service().index_analysis(
+            db,
+            user_id=user.id,
+            analysis_id=analysis.id,
+            payload=analysis_result,
+        )
+
+        if file_url:
+            analysis_result["fileUrl"] = file_url
+        if file_name:
+            analysis_result["fileName"] = file_name
+        if file_type:
+            analysis_result["fileType"] = file_type
+        analysis_result["analysisId"] = analysis.id
+        analysis_result["scan"] = scan_context_storage
+
+        user.selected_subject_id = detected_subject["id"]
+        touch_user_level(user)
+        db.add(user)
+        db.commit()
+
+        payload_for_ws = {"analysis": analysis_result, "user": serialize_user(user)}
+        await broadcast_event("homework_analyzed", payload_for_ws)
+        return analysis_result
+    except HTTPException:
+        db.rollback()
+        raise
+    except Exception as exc:  # noqa: BLE001
+        db.rollback()
+        LOGGER.exception("Failed to analyze uploaded homework")
+        print(f"PDF upload failure: {exc}")
+        return {
+            "status": "error",
+            "message": "Unable to process the uploaded PDF. Please try again with a clearer file.",
+        }
 
 
 async def broadcast_event(event_type: str, payload: dict[str, Any]) -> None:
@@ -838,113 +980,13 @@ def recommendations_post(payload: RecommendationRequest, db: Session = Depends(g
 @app.post("/api/homework/analyze", response_model=HomeworkAnalyzeResponse)
 @app.post("/api/analyze", response_model=HomeworkAnalyzeResponse)
 async def analyze(payload: HomeworkAnalyzeRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
-    user = get_primary_user(db)
+    return await _analyze_homework_request(payload, db)
 
-    file_name = payload.file_name
-    file_type = payload.file_type
-    file_url = None
-    saved_file_name = None
-    file_bytes = None
-    if payload.file_data_base64:
-        saved_file_name, file_url, file_bytes = save_uploaded_file(payload.file_name, payload.file_type, payload.file_data_base64)
-        file_name = file_name or saved_file_name
 
-    pipeline = get_vidya_ai_core().analyze_homework(
-        db=db,
-        user=user,
-        file_name=file_name,
-        file_type=file_type,
-        file_bytes=file_bytes,
-        input_method=payload.input_method,
-        subject=payload.subject or user.selected_subject_id,
-        language=payload.language,
-        question_text=payload.question_text,
-        transcript=payload.transcript,
-        notes=payload.notes,
-        ocr_text=payload.ocr_text,
-    )
-    analysis_result = pipeline.analysis_payload
-    scan_context = dict(analysis_result.get("scan") or {})
-    detected_subject = analysis_result.get("detectedSubject") or {"id": payload.subject or user.selected_subject_id or "maths", "confidence": 0.5, "reason": "Fallback subject."}
-    user.selected_subject_id = detected_subject["id"]
-    user.doubts_solved += 1
-    if analysis_result.get("status") == "ok":
-        user.homework_completed += 1
-
-    scan_context_storage = dict(scan_context)
-    scan_context_storage.pop("pageImages", None)
-
-    if scan_context_storage.get("questionText"):
-        analysis_result["questionText"] = scan_context_storage["questionText"]
-    analysis_result["source"] = analysis_result.get("scanMethod") or payload.input_method
-    analysis_result["scanMethod"] = analysis_result.get("scanMethod") or scan_context_storage.get("scanMethod")
-    analysis_result["sourceType"] = analysis_result.get("sourceType") or scan_context_storage.get("sourceKind")
-    analysis_result["extractedText"] = analysis_result.get("extractedText") or scan_context_storage.get("extractedText")
-    analysis_result["pageCount"] = analysis_result.get("pageCount") or scan_context_storage.get("pageCount")
-    analysis_result["detailedExplanation"] = (
-        analysis_result.get("detailedExplanation")
-        or scan_context_storage.get("detailedExplanation")
-        or analysis_result.get("summary")
-    )
-    analysis_result["summary"] = analysis_result.get("summary") or scan_context_storage.get("summary")
-    if not analysis_result.get("recommendations") and scan_context_storage.get("recommendations"):
-        analysis_result["recommendations"] = scan_context_storage.get("recommendations")
-    if not analysis_result.get("steps") and scan_context_storage.get("steps"):
-        analysis_result["steps"] = scan_context_storage.get("steps")
-
-    analysis = HomeworkAnalysis(
-        user_id=user.id,
-        input_method=payload.input_method,
-        language=payload.language,
-        subject_id=payload.subject or detected_subject["id"],
-        detected_subject_id=detected_subject["id"],
-        confidence=float(detected_subject.get("confidence", 0.5)),
-        question_text=analysis_result.get("questionText") or payload.question_text or payload.transcript or payload.ocr_text or payload.notes or "",
-        extracted_equation=analysis_result.get("extractedEquation"),
-        final_answer=analysis_result.get("finalAnswer"),
-        variable=analysis_result.get("variable"),
-        status=analysis_result.get("status", "needs_review"),
-        steps=analysis_result.get("steps", []),
-        quiz=analysis_result.get("quiz", {}),
-        recommendations=analysis_result.get("recommendations", []),
-        raw_payload={**analysis_result, "scan": scan_context_storage},
-        file_name=file_name,
-        file_type=file_type,
-        file_path=saved_file_name,
-        transcript=payload.transcript or payload.ocr_text or payload.notes,
-        summary=analysis_result.get("summary"),
-    )
-    db.add(analysis)
-    db.flush()
-
-    get_rag_service().index_analysis(
-        db,
-        user_id=user.id,
-        analysis_id=analysis.id,
-        payload=analysis_result,
-    )
-
-    if file_url:
-        analysis_result["fileUrl"] = file_url
-    if file_name:
-        analysis_result["fileName"] = file_name
-    if file_type:
-        analysis_result["fileType"] = file_type
-    analysis_result["analysisId"] = analysis.id
-    analysis_result["scan"] = scan_context_storage
-
-    user.selected_subject_id = detected_subject["id"]
-    touch_user_level(user)
-    db.add(user)
-    db.commit()
-
-    payload_for_ws = {"analysis": analysis_result, "user": serialize_user(user)}
-    await broadcast_event("homework_analyzed", payload_for_ws)
-
-    if analysis_result.get("status") == "ok":
-        return analysis_result
-
-    return analysis_result
+@app.post("/upload-pdf", response_model=HomeworkAnalyzeResponse)
+@app.post("/api/upload-pdf", response_model=HomeworkAnalyzeResponse)
+async def upload_pdf(payload: HomeworkAnalyzeRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
+    return await _analyze_homework_request(payload, db)
 
 
 @app.get("/api/quiz")

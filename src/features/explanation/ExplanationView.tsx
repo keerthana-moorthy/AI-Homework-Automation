@@ -93,7 +93,9 @@ export const ExplanationView: React.FC = () => {
     chatSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const subjectVariant = getSubjectVariant(explanation?.subject?.id);
+  const subjectId = typeof explanation?.subject?.id === 'string' ? explanation.subject.id : undefined;
+  const subjectName = typeof explanation?.subject?.name === 'string' ? explanation.subject.name : 'Maths';
+  const subjectVariant = getSubjectVariant(subjectId);
   const steps = explanation?.steps?.length ? explanation.steps : EXPLANATION_STEPS;
   const scanLabel = getScanLabel(explanation?.scanMethod, explanation?.sourceType);
   const fileUrl = resolveBackendUrl(explanation?.fileUrl);
@@ -105,7 +107,7 @@ export const ExplanationView: React.FC = () => {
           <Button variant="back" onClick={() => handleNavigate(2)} />
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <Badge variant={subjectVariant as any}>{explanation?.subject?.name ?? 'Maths'}</Badge>
+              <Badge variant={subjectVariant as any}>{subjectName}</Badge>
               <Badge variant="white">{scanLabel}</Badge>
               {explanation?.pageCount ? <Badge variant="white">{explanation.pageCount} page(s)</Badge> : null}
             </div>

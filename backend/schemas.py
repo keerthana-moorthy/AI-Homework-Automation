@@ -318,6 +318,9 @@ class QuizStateOut(CamelModel):
     xp_earned_this_session: int
     toast_message: str | None = None
     progress_percent: float
+    topic: str | None = None
+    title: str | None = None
+    subject_id: str | None = None
 
 
 class ParentOut(CamelModel):

@@ -30,7 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-gray-150 flex items-center justify-between px-6 shrink-0 z-20">
+    <header className="h-16 bg-white border-b border-gray-100 flex items-center justify-between px-6 shrink-0 z-20">
       {/* Screen Title & Hamburger */}
       <div className="flex items-center gap-3">
         <button 

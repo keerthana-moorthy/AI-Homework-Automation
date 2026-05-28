@@ -23,14 +23,15 @@ export const ActionCard: React.FC<ActionCardProps> = ({
   };
 
   return (
-    <div
+    <button
+      type="button"
       onClick={onClick}
-      className={`border-2 rounded-2xl p-4 text-center cursor-pointer transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:translate-y-0 ${styles[cardType]}`}
+      className={`w-full border-2 rounded-2xl p-4 text-center cursor-pointer transition-all duration-200 hover:-translate-y-1 hover:shadow-md active:translate-y-0 ${styles[cardType]}`}
     >
       <div className="text-3xl mb-1.5 select-none">{emoji}</div>
       <div className="text-sm font-extrabold text-gray-800 leading-tight">{label}</div>
       <div className="text-[11px] text-gray-500 font-semibold mt-0.5">{subtext}</div>
-    </div>
+    </button>
   );
 };
 

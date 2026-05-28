@@ -18,7 +18,7 @@ export const StepCard: React.FC<StepCardProps> = ({
       </div>
       <div className="font-nunito">
         <div className="text-sm font-extrabold text-gray-800 mb-0.5">{title}</div>
-        <div className="text-[12px] text-gray-500 font-semibold leading-relaxed" dangerouslySetInnerHTML={{ __html: desc }} />
+        <div className="text-[12px] text-gray-500 font-semibold leading-relaxed">{desc}</div>
       </div>
     </div>
   );

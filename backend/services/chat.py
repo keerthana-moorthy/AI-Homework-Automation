@@ -171,13 +171,6 @@ def answer_explanation_chat(
             "suggestedQuestions": _suggested_questions(analysis),
         }
 
-    client = _build_client()
-    if client is None:
-        return {
-            "reply": _fallback_reply(analysis=analysis, message=normalized_message, language=language),
-            "suggestedQuestions": _suggested_questions(analysis),
-        }
-
     if language == "ta":
         language_rule = "Answer primarily in Tamil, but keep math symbols and equations unchanged."
     elif language == "both":
@@ -205,6 +198,7 @@ def answer_explanation_chat(
         },
     ]
 
+    reply = ""
     router = get_llm_router()
     if router.configured:
         try:

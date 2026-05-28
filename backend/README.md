@@ -9,7 +9,7 @@ This folder contains the Python FastAPI backend for Vidya AI.
 - SQLAlchemy
 - Pydantic
 - WebSockets
-- Groq vision OCR
+- Shared Groq/Hugging Face LLM routing for chat, quiz, OCR, and doubt solving
 - PyMuPDF for PDF scan extraction
 
 ## Run

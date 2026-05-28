@@ -6,13 +6,12 @@ import re
 from typing import Any
 
 from .solver import detect_subject
+from .llm_router import get_llm_router
 
 try:  # Optional dependency for PDF rendering/text extraction.
     import fitz  # type: ignore
 except ImportError:  # pragma: no cover - handled at runtime.
     fitz = None
-
-VISION_MODEL = "llama-3.2-11b-vision-preview"
 
 
 def normalize_text(text: str) -> str:

@@ -1,21 +1,16 @@
 import React, { useEffect } from 'react';
 import { Provider } from 'react-redux';
-import store, { useAppDispatch, useAppSelector } from './store';
 import DashboardLayout from './components/layout/DashboardLayout';
-import OnboardingView from './features/onboarding/OnboardingView';
 import DashboardView from './features/dashboard/DashboardView';
-import UploadView from './features/upload/UploadView';
 import ExplanationView from './features/explanation/ExplanationView';
-import QuizView from './features/quiz/QuizView';
+import OnboardingView from './features/onboarding/OnboardingView';
 import ParentView from './features/parent/ParentView';
-
-// Inner component to access Redux selectors safely
-const MainAppContent: React.FC = () => {
-  const activeScreen = useAppSelector((state) => state.app.activeScreen);
-import { hydrateSession, setLoading } from './store/slices/appSlice';
+import QuizView from './features/quiz/QuizView';
+import UploadView from './features/upload/UploadView';
 import { getSession, toUserState } from './services/api';
+import { hydrateSession, setLoading } from './store/slices/appSlice';
+import store, { useAppDispatch, useAppSelector } from './store';
 
-// Inner component to access Redux selectors safely
 const MainAppContent: React.FC = () => {
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector((state) => state.app.activeScreen);
@@ -28,7 +23,9 @@ const MainAppContent: React.FC = () => {
       dispatch(setLoading(true));
       try {
         const response = await getSession();
-        if (cancelled) return;
+        if (cancelled) {
+          return;
+        }
 
         dispatch(
           hydrateSession({
@@ -63,7 +60,7 @@ const MainAppContent: React.FC = () => {
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-amberLight via-white to-brand-blueLight font-nunito">
         <div className="bg-white/90 backdrop-blur rounded-3xl border border-white shadow-xl px-6 py-5 text-center max-w-sm mx-4">
           <div className="w-12 h-12 rounded-full bg-brand-orange text-white flex items-center justify-center mx-auto mb-3 text-2xl shadow-[0_4px_0_#C84B1E]">
-            ✨
+            ...
           </div>
           <h1 className="text-lg font-black text-gray-800">Loading Vidya AI</h1>
           <p className="text-sm text-gray-500 font-semibold mt-1">Connecting to your backend session...</p>
@@ -72,7 +69,6 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  // Screen 1 is the Onboarding / Landing page (takes full screen without sidebar)
   if (activeScreen === 1) {
     return <OnboardingView />;
   }
@@ -94,11 +90,7 @@ const MainAppContent: React.FC = () => {
     }
   };
 
-  return (
-    <DashboardLayout>
-      {renderActiveScreen()}
-    </DashboardLayout>
-  );
+  return <DashboardLayout>{renderActiveScreen()}</DashboardLayout>;
 };
 
 export const App: React.FC = () => {

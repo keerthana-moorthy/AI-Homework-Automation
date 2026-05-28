@@ -314,7 +314,8 @@ class LLMRouter:
                     last_error = exc
                     sleep_for = 0.25 * (2**attempt)
                     LOGGER.warning("LLM call failed via %s, retrying in %.2fs: %s", provider_name, sleep_for, exc)
-                    time.sleep(sleep_for)
+                    if attempt < max(1, retries) - 1:
+                        time.sleep(sleep_for)
             LOGGER.warning("LLM provider %s exhausted retries; trying fallback provider if available.", provider_name)
 
         if last_error is not None:

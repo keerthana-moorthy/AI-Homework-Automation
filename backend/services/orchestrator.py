@@ -424,7 +424,7 @@ class VidyaAICore:
         analysis_id: int | None = None,
         topic: str | None = None,
         difficulty: str | None = None,
-        question_count: int = 5,
+        question_count: int = 10,
         language: str = "en",
         adaptive: bool = True,
     ) -> dict[str, Any]:

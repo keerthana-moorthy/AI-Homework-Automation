@@ -2,18 +2,26 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+import re
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from .analytics_service import build_student_analytics
-from .common import clamp, normalize_text
+from .common import normalize_text, top_keywords
 from .llm_router import get_llm_router
 from .math_service import build_math_explanation, solve_math_question
 from .translation_service import translate_text
+from ..constants import level_for_xp
 from ..models import AdaptiveQuizAttempt, AdaptiveQuizSession, HomeworkAnalysis, UserProfile
+from ..schemas import QuizQuestionOut, QuizStateOut, UserOut
+
+
+DEFAULT_QUIZ_QUESTION_COUNT = 10
+MAX_QUIZ_QUESTION_COUNT = 20
+_OPTION_PREFIX_RE = re.compile(r"^\s*(?:option\s*)?[A-Da-d]\s*(?:\)|\.|:|-)\s*", re.IGNORECASE)
 
 
 @dataclass(slots=True)
@@ -44,6 +52,132 @@ class QuizGenerationResult:
                 "masterySnapshot": self.mastery_snapshot,
             }
         }
+
+
+def _extract_document_text(analysis_payload: dict[str, Any] | None) -> str:
+    if not analysis_payload:
+        return ""
+
+    scan_payload = analysis_payload.get("scan") if isinstance(analysis_payload.get("scan"), dict) else {}
+    candidates = [
+        analysis_payload.get("extractedText"),
+        analysis_payload.get("rawText"),
+        scan_payload.get("extractedText") if isinstance(scan_payload, dict) else None,
+        scan_payload.get("rawText") if isinstance(scan_payload, dict) else None,
+        analysis_payload.get("questionText"),
+        analysis_payload.get("summary"),
+    ]
+    for candidate in candidates:
+        text = str(candidate or "").strip()
+        if text:
+            return text
+    return ""
+
+
+def _quiz_payload_state(session: AdaptiveQuizSession) -> dict[str, Any]:
+    payload = dict(session.quiz_payload or {})
+    items = payload.get("items") if isinstance(payload.get("items"), list) else []
+    normalized_items = [item for item in items if isinstance(item, dict)]
+
+    current_index_raw = payload.get("currentIndex", 0)
+    try:
+        current_index = int(current_index_raw)
+    except (TypeError, ValueError):
+        current_index = 0
+    if normalized_items:
+        current_index = max(0, min(current_index, len(normalized_items) - 1))
+    else:
+        current_index = 0
+
+    status = normalize_text(payload.get("status") or "idle").lower()
+    if status not in {"idle", "correct", "wrong"}:
+        status = "idle"
+
+    selected_option = normalize_text(payload.get("selectedOption")) or None
+    try:
+        xp_earned = int(payload.get("xpEarned") or 0)
+    except (TypeError, ValueError):
+        xp_earned = 0
+
+    payload.update(
+        {
+            "items": normalized_items,
+            "currentIndex": current_index,
+            "status": status,
+            "selectedOption": selected_option,
+            "xpEarned": max(0, xp_earned),
+        }
+    )
+    return payload
+
+
+def build_adaptive_quiz_state(session: AdaptiveQuizSession) -> QuizStateOut:
+    payload = _quiz_payload_state(session)
+    questions: list[QuizQuestionOut] = []
+    for item in payload.get("items") or []:
+        try:
+            questions.append(QuizQuestionOut.model_validate(item))
+        except Exception:  # noqa: BLE001
+            continue
+
+    current_index = payload["currentIndex"] if questions else 0
+    if questions:
+        current_index = max(0, min(current_index, len(questions) - 1))
+    current_question = questions[current_index] if questions else None
+
+    status = payload["status"]
+    toast_message = (
+        "+10 XP earned! Keep going, you're on fire!"
+        if status == "correct"
+        else ("Oops! That's incorrect. Try again!" if status == "wrong" else None)
+    )
+    progress_percent = ((current_index + 1) / max(1, len(questions))) * 100 if questions else 0.0
+
+    return QuizStateOut(
+        questions=questions,
+        current_index=current_index,
+        current_question=current_question,
+        selected_option=payload["selectedOption"],
+        status=status,
+        xp_earned_this_session=payload["xpEarned"],
+        toast_message=toast_message,
+        progress_percent=progress_percent,
+    )
+
+
+def _resolve_quiz_session(
+    db: Session,
+    *,
+    user: UserProfile,
+    quiz_session_id: str | None,
+) -> AdaptiveQuizSession | None:
+    if quiz_session_id:
+        session = db.get(AdaptiveQuizSession, quiz_session_id)
+        if session is None or session.user_id != user.id:
+            raise ValueError("Quiz session not found")
+        if session.status != "active":
+            raise ValueError("Quiz session is not active")
+        return session
+
+    return db.scalar(
+        select(AdaptiveQuizSession)
+        .where(AdaptiveQuizSession.user_id == user.id, AdaptiveQuizSession.status == "active")
+        .order_by(desc(AdaptiveQuizSession.created_at), desc(AdaptiveQuizSession.id))
+    )
+
+
+def _sync_user_quiz_state(
+    user: UserProfile,
+    *,
+    current_index: int,
+    selected_option: str | None,
+    status: str,
+    xp_earned: int,
+) -> None:
+    user.quiz_current_index = current_index
+    user.quiz_selected_option = selected_option
+    user.quiz_status = status
+    user.quiz_xp_earned_this_session = xp_earned
 
 
 def _analysis_payload_from_row(row: HomeworkAnalysis | None) -> dict[str, Any] | None:
@@ -166,9 +300,20 @@ def _math_quiz_items(analysis_payload: dict[str, Any] | None, question_count: in
     return items
 
 
+def _canonical_option_text(value: str | None) -> str:
+    text = normalize_text(value)
+    text = _OPTION_PREFIX_RE.sub("", text)
+    return normalize_text(text).casefold()
+
+
+def _is_answer_correct(chosen: str, correct: str) -> bool:
+    return _canonical_option_text(chosen) == _canonical_option_text(correct)
+
+
 def _llm_generate_quiz_items(
     *,
     analysis_payload: dict[str, Any] | None,
+    extracted_text: str | None,
     topic: str,
     difficulty: str,
     question_count: int,
@@ -185,19 +330,26 @@ def _llm_generate_quiz_items(
         "You are an educational quiz generator for Vidya AI. "
         "Create a JSON object only. The JSON must contain quizId, title, subjectId, topic, difficulty, language, and items. "
         "Each item must include id, type, question, options, correctOption, explanation, topic, and difficulty. "
-        "Keep the questions grounded in the homework context. Do not invent facts outside the provided scan. "
+        "You MUST generate every question, correct answer, and explanation strictly from the provided Document Content. "
+        "Do not use outside knowledge or invent facts. If the content is short, ask multiple questions about different facts or wording from the same content, but never add new information. "
         "Use one or more of the types: mcq, fill_blank, short_answer, reasoning, numerical. "
         "Ensure the correctOption is present inside options for MCQ-style items. "
         "Keep language simple for a student."
     )
     user_prompt = (
+        f"Document Content (authoritative source):\n{extracted_text or question_text or summary or 'not available'}\n\n"
+        "Rules:\n"
+        "- Every quiz item must be answerable using only the document content above.\n"
+        "- Do not add outside facts, assumptions, or generic textbook knowledge.\n"
+        "- Create exactly the requested number of distinct items.\n"
+        "- Keep the correct option grounded in the document text.\n\n"
         f"Homework question: {question_text or 'not available'}\n"
         f"Homework summary: {summary or 'not available'}\n"
         f"Subject: {subject}\n"
         f"Topic: {topic}\n"
         f"Difficulty: {difficulty}\n"
         f"Language: {language}\n"
-        f"Generate exactly {question_count} quiz items."
+        f"Generate exactly {question_count} distinct quiz items based ONLY on the Document Content above."
     )
     raw = router.generate_json(
         task="quiz",
@@ -234,45 +386,55 @@ def _llm_generate_quiz_items(
                 "difficulty": normalize_text(item.get("difficulty")) or difficulty,
             }
         )
-    return items[:question_count] if items else None
+    if not items:
+        return None
+    return items[:question_count]
 
 
 def _fallback_quiz_items(
     *,
     analysis_payload: dict[str, Any] | None,
+    extracted_text: str | None,
     topic: str,
     difficulty: str,
     question_count: int,
     language: str,
+    start_index: int = 0,
 ) -> list[dict[str, Any]]:
     question_text = normalize_text(analysis_payload.get("questionText") if analysis_payload else None) or "the scanned homework"
     summary = normalize_text(analysis_payload.get("summary") if analysis_payload else None)
     explanation = normalize_text(analysis_payload.get("detailedExplanation") if analysis_payload else None)
     final_answer = normalize_text(analysis_payload.get("finalAnswer") if analysis_payload else None)
     topic_label = topic or "general concept"
+    source_text = extracted_text or " ".join(value for value in [question_text, summary, explanation, final_answer, topic_label] if value)
+    focus_terms = top_keywords(source_text, limit=max(question_count * 2, 8))
+    if not focus_terms:
+        focus_terms = [topic_label]
 
     items: list[dict[str, Any]] = []
-    for index in range(question_count):
+    for offset in range(question_count):
+        index = start_index + offset
+        focus = focus_terms[offset % len(focus_terms)]
         item_type = ["mcq", "fill_blank", "short_answer", "reasoning"][index % 4]
         item_id = f"quiz-{uuid4().hex[:8]}-{index + 1}"
         if item_type == "mcq":
-            question = f"Which statement best matches the concept in {question_text}?"
-            correct_option = f"B) {summary or explanation or final_answer or topic_label}"
+            question = f"Which detail in the document is most closely related to '{focus}'?"
+            correct_option = f"B) {focus}"
         elif item_type == "fill_blank":
-            question = f"Fill in the blank: The key idea is _____ for {topic_label}."
-            correct_option = f"B) {topic_label}"
+            question = f"Fill in the blank: The document focuses on _____ and related ideas."
+            correct_option = f"B) {focus}"
         elif item_type == "short_answer":
-            question = f"Explain the main idea behind {topic_label} in one sentence."
-            correct_option = f"B) {summary or explanation or topic_label}"
+            question = f"In one sentence, what does the document say about {focus}?"
+            correct_option = f"B) {summary or explanation or focus}"
         else:
-            question = f"How would you solve or explain the question in the scan step by step?"
-            correct_option = f"B) {final_answer or summary or explanation or topic_label}"
+            question = f"How would you explain the idea of {focus} using the document?"
+            correct_option = f"B) {final_answer or summary or explanation or focus}"
 
         options = _format_options_from_answer(correct_option, item_index=index)
         if item_type == "short_answer":
             options = [
-                f"A) {summary or topic_label}",
-                f"B) {explanation or final_answer or topic_label}",
+                f"A) {focus}",
+                f"B) {summary or explanation or focus}",
                 "C) Try the same idea again",
                 "D) Look at unrelated facts",
             ]
@@ -300,6 +462,13 @@ def _normalize_items(items: list[dict[str, Any]], question_count: int) -> list[d
         correct_option = normalize_text(item.get("correctOption"))
         if correct_option and correct_option not in options:
             options.append(correct_option)
+        if len(options) < 4:
+            fallback_options = _format_options_from_answer(correct_option or item.get("question") or "Review", item_index=index)
+            for fallback_option in fallback_options:
+                if len(options) >= 4:
+                    break
+                if fallback_option not in options:
+                    options.append(fallback_option)
         normalized.append(
             {
                 "id": normalize_text(item.get("id")) or f"quiz-{uuid4().hex[:8]}-{index}",
@@ -339,6 +508,10 @@ def _build_session_payload(
         "questionCount": question_count,
         "items": items,
         "masterySnapshot": mastery_snapshot,
+        "currentIndex": 0,
+        "status": "idle",
+        "selectedOption": None,
+        "xpEarned": 0,
     }
 
 
@@ -352,7 +525,7 @@ class QuizService:
         analysis_id: int | None = None,
         topic: str | None = None,
         difficulty: str | None = None,
-        question_count: int = 5,
+        question_count: int = DEFAULT_QUIZ_QUESTION_COUNT,
         language: str = "en",
         adaptive: bool = True,
     ) -> dict[str, Any]:
@@ -371,7 +544,8 @@ class QuizService:
         subject_id = _subject_from_payload(analysis_payload, fallback=user.selected_subject_id or "maths")
         topic_name = topic or _topic_from_payload(analysis_payload, fallback="general")
         difficulty_name = (difficulty or _difficulty_from_payload(analysis_payload, analytics)).lower()
-        question_count = max(1, min(8, int(question_count or 5)))
+        question_count = max(DEFAULT_QUIZ_QUESTION_COUNT, min(MAX_QUIZ_QUESTION_COUNT, int(question_count or DEFAULT_QUIZ_QUESTION_COUNT)))
+        extracted_text = _extract_document_text(analysis_payload)
 
         items = None
         if adaptive and subject_id == "maths":
@@ -379,6 +553,7 @@ class QuizService:
         if not items:
             items = _llm_generate_quiz_items(
                 analysis_payload=analysis_payload,
+                extracted_text=extracted_text,
                 topic=topic_name,
                 difficulty=difficulty_name,
                 question_count=question_count,
@@ -387,6 +562,7 @@ class QuizService:
         if not items:
             items = _fallback_quiz_items(
                 analysis_payload=analysis_payload,
+                extracted_text=extracted_text,
                 topic=topic_name,
                 difficulty=difficulty_name,
                 question_count=question_count,
@@ -394,6 +570,17 @@ class QuizService:
             )
 
         items = _normalize_items(items, question_count)
+        if len(items) < question_count:
+            filler_items = _fallback_quiz_items(
+                analysis_payload=analysis_payload,
+                extracted_text=extracted_text,
+                topic=topic_name,
+                difficulty=difficulty_name,
+                question_count=question_count - len(items),
+                language=language,
+                start_index=len(items),
+            )
+            items = _normalize_items(items + filler_items, question_count)
         if language and language != "en":
             for item in items:
                 item["question"] = translate_text(item.get("question"), target_language=language)
@@ -418,7 +605,19 @@ class QuizService:
             language=language,
             question_count=question_count,
             status="active",
-            quiz_payload={"items": items, "analysisId": analysis_id, "generatedAt": datetime.utcnow().isoformat() + "Z"},
+            quiz_payload=_build_session_payload(
+                quiz_id=quiz_id,
+                analysis_id=analysis_id,
+                subject_id=subject_id,
+                topic=topic_name,
+                difficulty=difficulty_name,
+                language=language,
+                question_count=question_count,
+                items=items,
+                mastery_snapshot=mastery_snapshot,
+                title=title,
+            )
+            | {"generatedAt": datetime.utcnow().isoformat() + "Z"},
             mastery_snapshot=mastery_snapshot,
         )
         db.add(session)
@@ -443,28 +642,39 @@ class QuizService:
         *,
         user: UserProfile,
         selected_option: str,
-        quiz_session_id: str,
+        quiz_session_id: str | None = None,
         question_id: str | None = None,
         response_seconds: float | None = None,
     ) -> dict[str, Any]:
-        session = db.get(AdaptiveQuizSession, quiz_session_id)
-        if session is None or session.user_id != user.id:
+        session = _resolve_quiz_session(db, user=user, quiz_session_id=quiz_session_id)
+        if session is None:
             raise ValueError("Quiz session not found")
 
-        quiz_payload = session.quiz_payload if isinstance(session.quiz_payload, dict) else {}
+        quiz_payload = _quiz_payload_state(session)
         items = quiz_payload.get("items") if isinstance(quiz_payload.get("items"), list) else []
         if not items:
             raise ValueError("Quiz items are not available")
 
+        if quiz_payload["status"] != "idle":
+            raise ValueError("The current question has already been answered")
+
+        current_index = quiz_payload["currentIndex"]
         item = None
         if question_id:
-            item = next((entry for entry in items if normalize_text(entry.get("id")) == normalize_text(question_id)), None)
+            question_key = normalize_text(question_id)
+            for index, entry in enumerate(items):
+                if normalize_text(entry.get("id")) == question_key:
+                    item = entry
+                    current_index = index
+                    break
         if item is None:
-            item = items[0]
+            if current_index >= len(items):
+                current_index = len(items) - 1
+            item = items[current_index]
 
         correct_option = normalize_text(item.get("correctOption"))
         chosen_option = normalize_text(selected_option)
-        is_correct = chosen_option == correct_option
+        is_correct = _is_answer_correct(chosen_option, correct_option)
         xp_awarded = 10 if is_correct else 0
 
         db.add(
@@ -479,11 +689,29 @@ class QuizService:
             )
         )
         db.flush()
+        quiz_payload["currentIndex"] = current_index
+        quiz_payload["status"] = "correct" if is_correct else "wrong"
+        quiz_payload["selectedOption"] = chosen_option
+        quiz_payload["xpEarned"] = int(quiz_payload.get("xpEarned") or 0) + xp_awarded
+        session.quiz_payload = quiz_payload
         session.updated_at = datetime.utcnow()
-        answered_count = db.scalar(select(func.count()).select_from(AdaptiveQuizAttempt).where(AdaptiveQuizAttempt.session_id == session.id)) or 0
-        if answered_count >= len(items):
-            session.status = "completed"
+        session.status = "active"
+
+        _sync_user_quiz_state(
+            user,
+            current_index=current_index,
+            selected_option=chosen_option,
+            status=quiz_payload["status"],
+            xp_earned=quiz_payload["xpEarned"],
+        )
+        user.quiz_answered += 1
+        if is_correct:
+            user.quiz_correct += 1
+            user.xp_points += xp_awarded
+            user.level = level_for_xp(user.xp_points)
+
         db.add(session)
+        db.add(user)
         db.commit()
 
         explanation = normalize_text(item.get("explanation")) or "Review the explanation again for this concept."
@@ -504,18 +732,84 @@ class QuizService:
                 "topic": session.topic,
                 "difficulty": session.difficulty,
             },
-            "quiz": {
-                "quizId": session.id,
-                "analysisId": session.analysis_id,
-                "subjectId": session.subject_id,
-                "topic": session.topic,
-                "difficulty": session.difficulty,
-                "title": session.title,
-                "language": session.language,
-                "questionCount": session.question_count,
-                "items": items,
-                "masterySnapshot": session.mastery_snapshot,
-            },
+            "quiz": build_adaptive_quiz_state(session).model_dump(by_alias=True, exclude_none=True),
+            "user": UserOut.model_validate(user).model_dump(by_alias=True, exclude_none=True),
+        }
+
+    def next_quiz(
+        self,
+        db: Session,
+        *,
+        user: UserProfile,
+        quiz_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        session = _resolve_quiz_session(db, user=user, quiz_session_id=quiz_session_id)
+        if session is None:
+            raise ValueError("Quiz session not found")
+
+        quiz_payload = _quiz_payload_state(session)
+        items = quiz_payload.get("items") if isinstance(quiz_payload.get("items"), list) else []
+        if not items:
+            raise ValueError("Quiz items are not available")
+
+        if quiz_payload["status"] == "idle":
+            raise ValueError("The current question has not been answered yet")
+
+        current_index = quiz_payload["currentIndex"]
+        next_index = min(current_index + 1, len(items) - 1)
+        quiz_payload["currentIndex"] = next_index
+        quiz_payload["status"] = "idle"
+        quiz_payload["selectedOption"] = None
+        session.quiz_payload = quiz_payload
+        session.updated_at = datetime.utcnow()
+        session.status = "active"
+
+        _sync_user_quiz_state(
+            user,
+            current_index=next_index,
+            selected_option=None,
+            status="idle",
+            xp_earned=quiz_payload["xpEarned"],
+        )
+
+        db.add(session)
+        db.add(user)
+        db.commit()
+
+        return {
+            "ok": True,
+            "quiz": build_adaptive_quiz_state(session).model_dump(by_alias=True, exclude_none=True),
+        }
+
+    def complete_quiz_session(
+        self,
+        db: Session,
+        *,
+        user: UserProfile,
+        quiz_session_id: str | None = None,
+    ) -> dict[str, Any]:
+        session = _resolve_quiz_session(db, user=user, quiz_session_id=quiz_session_id)
+        if session is None:
+            raise ValueError("Quiz session not found")
+
+        session.status = "completed"
+        session.updated_at = datetime.utcnow()
+        db.add(session)
+
+        _sync_user_quiz_state(
+            user,
+            current_index=0,
+            selected_option=None,
+            status="idle",
+            xp_earned=0,
+        )
+        db.add(user)
+        db.commit()
+
+        return {
+            "ok": True,
+            "quizId": session.id,
+            "analysisId": session.analysis_id,
         }
 
 

@@ -314,21 +314,21 @@ def build_fallback_analysis(question_text: str, detected_subject: dict[str, Any]
         "steps": [
             {
                 "stepNum": 1,
-                "title": "Review the question",
-                "desc": "Send the exact equation or retype the homework text so the solver can parse it.",
+                "title": "Review the scan",
+                "desc": "Upload a clearer handwritten image or paste the OCR text exactly as it appears.",
             },
             {
                 "stepNum": 2,
-                "title": "Check the input",
-                "desc": "If this came from an image, send the OCR result to the backend after text extraction.",
+                "title": "Check the OCR text",
+                "desc": "If the handwriting is blurry, take the photo again in better light or crop to the question.",
             },
         ],
         "recommendations": [
             {
                 "id": "review-1",
-                "emoji": "💡",
-                "title": "Try typing the full equation",
-                "description": "The solver works best when the exact equation is sent as plain text.",
+                "emoji": "!",
+                "title": "Upload a clearer scan",
+                "description": "A sharper photo or PDF usually gives the best explanation.",
             }
         ],
     }
@@ -387,19 +387,39 @@ def analyze_homework(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def explanation_from_analysis(analysis: dict[str, Any] | None) -> dict[str, Any]:
-    if not analysis or analysis.get("status") != "ok":
+    if not analysis:
         return EXPLANATION_TEMPLATE.copy()
 
+    scan = analysis.get("scan") if isinstance(analysis.get("scan"), dict) else {}
+    if analysis.get("status") != "ok":
+        return {
+            "question": normalize_text(
+                analysis.get("questionText")
+                or analysis.get("extractedText")
+                or scan.get("extractedText")
+                or analysis.get("summary")
+                or EXPLANATION_TEMPLATE["question"],
+            ),
+            "subject": analysis.get("detectedSubject") or EXPLANATION_TEMPLATE["subject"],
+            "finalAnswer": normalize_text(analysis.get("finalAnswer")) or EXPLANATION_TEMPLATE["finalAnswer"],
+            "steps": analysis.get("steps") or scan.get("steps") or EXPLANATION_TEMPLATE["steps"],
+        }
+
     return {
-        "question": analysis["questionText"],
+        "question": normalize_text(
+            analysis.get("questionText")
+            or analysis.get("extractedText")
+            or scan.get("extractedText")
+            or EXPLANATION_TEMPLATE["question"]
+        ),
         "subject": {
             "id": analysis["detectedSubject"]["id"],
             "name": analysis["detectedSubject"]["id"].capitalize(),
             "confidence": analysis["detectedSubject"]["confidence"],
             "reason": analysis["detectedSubject"]["reason"],
         },
-        "finalAnswer": analysis["finalAnswer"],
-        "steps": analysis["steps"],
+        "finalAnswer": normalize_text(analysis.get("finalAnswer")) or EXPLANATION_TEMPLATE["finalAnswer"],
+        "steps": analysis.get("steps") or scan.get("steps") or EXPLANATION_TEMPLATE["steps"],
     }
 
 

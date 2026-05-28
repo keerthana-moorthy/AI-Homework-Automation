@@ -23,46 +23,65 @@ const createId = (prefix: string) => {
 };
 
 const getScanLabel = (scanMethod?: string, sourceType?: string) => {
-  if (scanMethod === 'groq-vision') {
-    return 'Vision scan';
+  const normalizedMethod = scanMethod?.toLowerCase();
+  const normalizedSource = sourceType?.toLowerCase();
+
+  if (normalizedSource?.includes('handwritten')) {
+    return 'Handwritten scan';
   }
-  if (scanMethod === 'pdf-text') {
+  if (normalizedMethod === 'pdf-text' || normalizedSource?.includes('pdf')) {
     return 'PDF OCR';
   }
-  if (sourceType === 'image') {
+  if (normalizedMethod === 'groq-vision') {
+    return 'Vision scan';
+  }
+  if (normalizedMethod === 'easyocr' || normalizedSource?.includes('image')) {
     return 'Image scan';
   }
-  if (sourceType === 'pdf') {
-    return 'PDF scan';
-  }
-  return 'Typed input';
+  return 'Uploaded text';
 };
 
 const buildGreeting = (explanation: ExplanationPayload | null) => {
+  const hasGroundedContent = Boolean(
+    explanation?.analysisId
+      || explanation?.extractedText
+      || explanation?.summary
+      || explanation?.detailedExplanation
+      || (explanation?.steps?.length ?? 0) > 0
+      || explanation?.fileUrl
+  );
   const question = explanation?.question?.trim();
   const summary = explanation?.summary?.trim();
 
-  if (question) {
+  if (hasGroundedContent && question) {
     return `I can help with the scanned homework question: "${question}". Ask me to explain any step, the OCR text, the summary, or the final answer.`;
   }
 
-  if (summary) {
+  if (hasGroundedContent && summary) {
     return 'I can explain the scanned homework, the OCR text, and every solution step. Ask me anything about the scan section or the answer.';
   }
 
-  return 'Upload a homework PDF or image and I will explain it here.';
+  return 'Upload a handwritten or scanned PDF or image and I will explain it here.';
 };
 
 const buildSuggestions = (explanation: ExplanationPayload | null) => {
+  const hasGroundedContent = Boolean(
+    explanation?.analysisId
+      || explanation?.extractedText
+      || explanation?.summary
+      || explanation?.detailedExplanation
+      || (explanation?.steps?.length ?? 0) > 0
+      || explanation?.fileUrl
+  );
   const suggestions = [
     'Explain this homework in simple words',
     'What did the scan read from my file?',
     'Give me one similar practice question',
   ];
 
-  const steps = explanation?.steps ?? [];
-  const finalAnswer = explanation?.finalAnswer?.trim();
-  const question = explanation?.question?.trim();
+  const steps = hasGroundedContent ? explanation?.steps ?? [] : [];
+  const finalAnswer = hasGroundedContent ? explanation?.finalAnswer?.trim() : undefined;
+  const question = hasGroundedContent ? explanation?.question?.trim() : undefined;
 
   if (steps.length > 0) {
     suggestions.splice(1, 0, 'Explain step 1 clearly');
@@ -77,7 +96,7 @@ const buildSuggestions = (explanation: ExplanationPayload | null) => {
   if (question) {
     suggestions.push(`Restate the question in simple words`);
   }
-  if (explanation?.summary) {
+  if (hasGroundedContent && explanation?.summary) {
     suggestions.push('What does the scan summary mean?');
   }
 
@@ -109,7 +128,14 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
 
   const storageKey = `vidya-explanation-chat-${explanation?.analysisId ?? 'draft'}`;
   const scanLabel = getScanLabel(explanation?.scanMethod, explanation?.sourceType);
-  const canChat = Boolean(explanation?.question || explanation?.extractedText || explanation?.summary || explanation?.analysisId);
+  const canChat = Boolean(
+    explanation?.analysisId
+      || explanation?.extractedText
+      || explanation?.summary
+      || explanation?.detailedExplanation
+      || (explanation?.steps?.length ?? 0) > 0
+      || explanation?.fileUrl
+  );
 
   useEffect(() => {
     const starterMessage: ChatEntry = {

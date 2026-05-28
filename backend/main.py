@@ -283,6 +283,7 @@ def active_adaptive_quiz_session(db: Session, user: UserProfile) -> AdaptiveQuiz
 
 
 def build_quiz_state(db: Session, user: UserProfile) -> dict[str, Any]:
+    ensure_quiz_session(db, user)
     adaptive_session = active_adaptive_quiz_session(db, user)
     if adaptive_session is not None:
         adaptive_state = build_adaptive_quiz_state(adaptive_session)
@@ -313,23 +314,36 @@ def build_quiz_state(db: Session, user: UserProfile) -> dict[str, Any]:
 
 
 def ensure_adaptive_quiz_session(db: Session, user: UserProfile) -> None:
-    if active_adaptive_quiz_session(db, user) is not None:
+    latest_row = latest_analysis_row(db, user)
+    latest_analysis_id = latest_row.id if latest_row is not None else None
+    existing_session = active_adaptive_quiz_session(db, user)
+    if existing_session is not None:
+        if latest_analysis_id is None or existing_session.analysis_id == latest_analysis_id:
+            existing_state = build_adaptive_quiz_state(existing_session)
+            if len(existing_state.questions) >= 10:
+                return
+        existing_session.status = "inactive"
+        db.add(existing_session)
+        db.commit()
+
+    if latest_row is None:
         return
 
-    row = latest_analysis_row(db, user)
-    if row is None:
-        return
-
-    analysis_payload = analysis_payload_from_row(row)
+    analysis_payload = analysis_payload_from_row(latest_row)
     get_vidya_ai_core().generate_quiz(
         db,
         user=user,
         analysis_payload=analysis_payload,
-        analysis_id=row.id,
+        analysis_id=latest_row.id,
         question_count=10,
         language=user.language or "en",
         adaptive=True,
+        allow_llm=True,
     )
+
+
+def ensure_quiz_session(db: Session, user: UserProfile) -> None:
+    ensure_adaptive_quiz_session(db, user)
 
 
 def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
@@ -422,11 +436,17 @@ def build_explanation_payload(db: Session, user: UserProfile, analysis_id: int |
 
     # For upload/ocr pending states, show a useful intermediary explanation.
     if analysis_payload:
+        scan_extracted_text = (scan_payload or {}).get("extractedText")
         return {
-            "question": analysis_payload.get("questionText") or EXPLANATION_TEMPLATE["question"],
+            "question": (
+                analysis_payload.get("questionText")
+                or scan_extracted_text
+                or analysis_payload.get("summary")
+                or EXPLANATION_TEMPLATE["question"]
+            ),
             "subject": analysis_payload.get("detectedSubject") or EXPLANATION_TEMPLATE["subject"],
-            "finalAnswer": "Add the exact equation or OCR text to unlock the full solution.",
-            "steps": analysis_payload.get("steps") or EXPLANATION_TEMPLATE["steps"],
+            "finalAnswer": analysis_payload.get("finalAnswer") or "The handwritten scan is still being processed.",
+            "steps": analysis_payload.get("steps") or (scan_payload or {}).get("steps") or EXPLANATION_TEMPLATE["steps"],
             "analysisId": analysis_payload.get("analysisId"),
             "classification": analysis_payload.get("classification"),
             "structuredDocumentJson": analysis_payload.get("structuredDocumentJson"),
@@ -950,10 +970,8 @@ async def analyze(payload: HomeworkAnalyzeRequest, db: Session = Depends(get_db)
 @app.get("/api/quiz")
 def quiz(db: Session = Depends(get_db)) -> dict[str, Any]:
     user = get_primary_user(db)
+    ensure_quiz_session(db, user)
     quiz_state = build_quiz_state(db, user)
-    if active_adaptive_quiz_session(db, user) is None and latest_analysis_row(db, user) is not None:
-        ensure_adaptive_quiz_session(db, user)
-        quiz_state = build_quiz_state(db, user)
     return {"ok": True, **quiz_state}
 
 

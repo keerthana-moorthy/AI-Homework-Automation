@@ -5,7 +5,7 @@ import { SUBJECTS, ACTION_CARDS } from '../../constants/mockData';
 import ActionCard from '../../components/common/ActionCard';
 import ProgressCard from '../../components/common/ProgressCard';
 import Badge from '../../components/common/Badge';
-import { getDashboard, toUserState, updateScreen, updateSubject } from '../../services/api';
+import { getDashboard, getQuiz, toUserState, updateScreen, updateSubject } from '../../services/api';
 
 export const DashboardView: React.FC = () => {
   const dispatch = useAppDispatch();
@@ -34,10 +34,18 @@ export const DashboardView: React.FC = () => {
     };
   }, []);
 
-  const handleActionClick = (targetScreen: number) => {
+  const handleActionClick = async (targetScreen: number) => {
     if (targetScreen === 0) {
       studyPlanRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       return;
+    }
+
+    if (targetScreen === 4) {
+      try {
+        await getQuiz();
+      } catch (error) {
+        console.error('Unable to prepare quiz', error);
+      }
     }
 
     dispatch(setActiveScreen(targetScreen));
@@ -138,7 +146,7 @@ export const DashboardView: React.FC = () => {
                   label={card.label}
                   subtext={card.subtext}
                   cardType={card.cardType}
-                  onClick={() => handleActionClick(card.targetScreen)}
+                  onClick={() => void handleActionClick(card.targetScreen)}
                 />
               ))}
             </div>
@@ -177,7 +185,7 @@ export const DashboardView: React.FC = () => {
               </h4>
               <button
                 type="button"
-                onClick={() => handleActionClick(0)}
+                onClick={() => void handleActionClick(0)}
                 className="text-xs font-bold text-brand-purple hover:underline"
               >
                 Jump to plan

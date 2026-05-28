@@ -306,6 +306,12 @@ def _canonical_option_text(value: str | None) -> str:
     return normalize_text(text).casefold()
 
 
+def _display_option_text(value: str | None) -> str:
+    text = normalize_text(value)
+    text = _OPTION_PREFIX_RE.sub("", text)
+    return normalize_text(text)
+
+
 def _is_answer_correct(chosen: str, correct: str) -> bool:
     return _canonical_option_text(chosen) == _canonical_option_text(correct)
 
@@ -455,11 +461,12 @@ def _fallback_quiz_items(
 
 def _normalize_items(items: list[dict[str, Any]], question_count: int) -> list[dict[str, Any]]:
     normalized: list[dict[str, Any]] = []
+    seen_questions: set[str] = set()
     for index, item in enumerate(items[:question_count], start=1):
-        options = [normalize_text(option) for option in item.get("options") or [] if normalize_text(option)]
+        options = [_display_option_text(option) for option in item.get("options") or [] if _display_option_text(option)]
         if len(options) < 2:
             options = _format_options_from_answer(item.get("correctOption") or "Review", item_index=index)
-        correct_option = normalize_text(item.get("correctOption"))
+        correct_option = _display_option_text(item.get("correctOption"))
         if correct_option and correct_option not in options:
             options.append(correct_option)
         if len(options) < 4:
@@ -469,11 +476,16 @@ def _normalize_items(items: list[dict[str, Any]], question_count: int) -> list[d
                     break
                 if fallback_option not in options:
                     options.append(fallback_option)
+        question = normalize_text(item.get("question")) or "Review the scanned homework."
+        question_signature = question.casefold()
+        if question_signature in seen_questions:
+            continue
+        seen_questions.add(question_signature)
         normalized.append(
             {
                 "id": normalize_text(item.get("id")) or f"quiz-{uuid4().hex[:8]}-{index}",
                 "type": normalize_text(item.get("type")) or "mcq",
-                "question": normalize_text(item.get("question")) or "Review the scanned homework.",
+                "question": question,
                 "options": options[:4],
                 "correctOption": correct_option or options[0],
                 "explanation": normalize_text(item.get("explanation")) or "",
@@ -528,6 +540,7 @@ class QuizService:
         question_count: int = DEFAULT_QUIZ_QUESTION_COUNT,
         language: str = "en",
         adaptive: bool = True,
+        allow_llm: bool = True,
     ) -> dict[str, Any]:
         if analysis_payload is None and analysis_id is not None:
             row = db.get(HomeworkAnalysis, analysis_id)
@@ -548,9 +561,7 @@ class QuizService:
         extracted_text = _extract_document_text(analysis_payload)
 
         items = None
-        if adaptive and subject_id == "maths":
-            items = _math_quiz_items(analysis_payload, question_count, difficulty_name)
-        if not items:
+        if allow_llm and extracted_text:
             items = _llm_generate_quiz_items(
                 analysis_payload=analysis_payload,
                 extracted_text=extracted_text,
@@ -559,6 +570,8 @@ class QuizService:
                 question_count=question_count,
                 language=language,
             )
+        if not items and adaptive and subject_id == "maths":
+            items = _math_quiz_items(analysis_payload, question_count, difficulty_name)
         if not items:
             items = _fallback_quiz_items(
                 analysis_payload=analysis_payload,
@@ -570,7 +583,7 @@ class QuizService:
             )
 
         items = _normalize_items(items, question_count)
-        if len(items) < question_count:
+        while len(items) < question_count:
             filler_items = _fallback_quiz_items(
                 analysis_payload=analysis_payload,
                 extracted_text=extracted_text,
@@ -580,7 +593,10 @@ class QuizService:
                 language=language,
                 start_index=len(items),
             )
-            items = _normalize_items(items + filler_items, question_count)
+            merged_items = _normalize_items(items + filler_items, question_count)
+            if len(merged_items) <= len(items):
+                break
+            items = merged_items
         if language and language != "en":
             for item in items:
                 item["question"] = translate_text(item.get("question"), target_language=language)

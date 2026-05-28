@@ -1,11 +1,11 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppDispatch } from '../../store';
 import { setActiveScreen } from '../../store/slices/appSlice';
-import { EXPLANATION_STEPS } from '../../constants/mockData';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import StepCard from '../../components/common/StepCard';
 import {
+  getQuiz,
   getExplanation,
   resolveBackendUrl,
   updateScreen,
@@ -14,7 +14,7 @@ import {
 import ExplanationChatPanel from './ExplanationChatPanel';
 
 const getSubjectVariant = (subjectId?: string) => {
-  switch (subjectId) {
+  switch ((subjectId ?? '').toLowerCase()) {
     case 'science':
       return 'sci';
     case 'english':
@@ -24,25 +24,32 @@ const getSubjectVariant = (subjectId?: string) => {
     case 'history':
       return 'hist';
     case 'maths':
-    default:
       return 'math';
+    case 'handwritten':
+    case 'pending':
+    case 'unknown':
+    default:
+      return 'default';
   }
 };
 
 const getScanLabel = (scanMethod?: string, sourceType?: string) => {
-  if (scanMethod === 'groq-vision') {
-    return 'Vision scan';
+  const normalizedMethod = scanMethod?.toLowerCase();
+  const normalizedSource = sourceType?.toLowerCase();
+
+  if (normalizedSource?.includes('handwritten')) {
+    return 'Handwritten scan';
   }
-  if (scanMethod === 'pdf-text') {
+  if (normalizedMethod === 'pdf-text' || normalizedSource?.includes('pdf')) {
     return 'PDF OCR';
   }
-  if (sourceType === 'image') {
+  if (normalizedMethod === 'groq-vision') {
+    return 'Vision scan';
+  }
+  if (normalizedMethod === 'easyocr' || normalizedSource?.includes('image')) {
     return 'Image scan';
   }
-  if (sourceType === 'pdf') {
-    return 'PDF scan';
-  }
-  return 'Typed input';
+  return 'Uploaded text';
 };
 
 const isPdfPreview = (fileType?: string, fileName?: string) => {
@@ -82,7 +89,15 @@ export const ExplanationView: React.FC = () => {
     };
   }, []);
 
-  const handleNavigate = (screen: number) => {
+  const handleNavigate = async (screen: number) => {
+    if (screen === 4) {
+      try {
+        await getQuiz();
+      } catch (error) {
+        console.error('Unable to prepare quiz', error);
+      }
+    }
+
     dispatch(setActiveScreen(screen));
     void updateScreen(screen).catch((error) => {
       console.error('Unable to persist screen change', error);
@@ -94,7 +109,7 @@ export const ExplanationView: React.FC = () => {
   };
 
   const subjectVariant = getSubjectVariant(explanation?.subject?.id);
-  const steps = explanation?.steps?.length ? explanation.steps : EXPLANATION_STEPS;
+  const steps = explanation?.steps?.length ? explanation.steps : [];
   const scanLabel = getScanLabel(explanation?.scanMethod, explanation?.sourceType);
   const fileUrl = resolveBackendUrl(explanation?.fileUrl);
 
@@ -102,10 +117,10 @@ export const ExplanationView: React.FC = () => {
     <div className="space-y-6">
       <div className="flex items-center justify-between bg-gradient-to-br from-brand-purple to-[#9B7ABF] text-white p-5 rounded-3xl shadow-sm">
         <div className="flex items-center gap-3">
-          <Button variant="back" onClick={() => handleNavigate(2)} />
+          <Button variant="back" onClick={() => void handleNavigate(2)} />
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <Badge variant={subjectVariant as any}>{explanation?.subject?.name ?? 'Maths'}</Badge>
+              <Badge variant={subjectVariant as any}>{explanation?.subject?.name ?? 'Homework'}</Badge>
               <Badge variant="white">{scanLabel}</Badge>
               {explanation?.pageCount ? <Badge variant="white">{explanation.pageCount} page(s)</Badge> : null}
             </div>
@@ -124,7 +139,7 @@ export const ExplanationView: React.FC = () => {
               Scanned Question
             </span>
             <h4 className="text-base font-extrabold text-gray-800 mt-1.5 leading-relaxed">
-              {explanation?.question ?? 'Solve for x: 3x + 7 = 22'}
+              {explanation?.question ?? 'Upload a handwritten or scanned question to see it here.'}
             </h4>
             {explanation?.extractedText ? (
               <div className="mt-4 bg-white/80 rounded-xl p-4 border border-white/70">
@@ -139,7 +154,7 @@ export const ExplanationView: React.FC = () => {
           <div className="bg-gradient-to-r from-brand-green to-[#66BB6A] rounded-2xl p-6 text-white text-center shadow-md relative overflow-hidden">
             <div className="relative z-10 select-none">
               <span className="text-xs font-black text-white/85 uppercase tracking-wider">Final Answer</span>
-              <h2 className="text-3xl font-black mt-1">{explanation?.finalAnswer ?? 'Waiting for analysis'}</h2>
+              <h2 className="text-3xl font-black mt-1">{explanation?.finalAnswer ?? 'Waiting for OCR and analysis'}</h2>
             </div>
             <div className="absolute right-0 bottom-0 w-24 h-24 bg-white/5 rounded-full blur-xl pointer-events-none" />
           </div>
@@ -195,16 +210,22 @@ export const ExplanationView: React.FC = () => {
               How to Solve
             </h4>
 
-            <div className="space-y-3">
-              {steps.map((step) => (
-                <StepCard
-                  key={step.stepNum}
-                  stepNum={step.stepNum}
-                  title={step.title}
-                  desc={step.desc}
-                />
-              ))}
-            </div>
+            {steps.length > 0 ? (
+              <div className="space-y-3">
+                {steps.map((step) => (
+                  <StepCard
+                    key={step.stepNum}
+                    stepNum={step.stepNum}
+                    title={step.title}
+                    desc={step.desc}
+                  />
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-4 text-sm font-semibold text-gray-600">
+                Upload a clear handwritten image or PDF and the step-by-step explanation will appear here.
+              </div>
+            )}
           </div>
 
           {explanation?.detailedExplanation ? (
@@ -230,7 +251,7 @@ export const ExplanationView: React.FC = () => {
             </Button>
             <Button
               variant="secondary"
-              onClick={() => handleNavigate(4)}
+              onClick={() => void handleNavigate(4)}
               className="flex-1"
             >
               Take a quiz on this topic

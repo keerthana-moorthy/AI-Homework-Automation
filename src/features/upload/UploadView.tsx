@@ -326,7 +326,7 @@ export const UploadView: React.FC = () => {
               <FormTextArea
                 label="Type your question below"
                 name="questionText"
-                placeholder="Example: Solve for x: 3x + 7 = 22"
+                placeholder="Type your handwritten question or paste the OCR text here"
                 register={register('questionText')}
                 error={errors.questionText?.message}
               />

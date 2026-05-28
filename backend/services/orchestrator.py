@@ -383,7 +383,11 @@ class VidyaAICore:
             steps = _normalize_steps(EXPLANATION_TEMPLATE["steps"])
 
         explanation = {
-            "question": question_text or analysis_payload.get("questionText") or EXPLANATION_TEMPLATE["question"],
+            "question": question_text
+            or analysis_payload.get("questionText")
+            or analysis_payload.get("extractedText")
+            or analysis_payload.get("summary")
+            or EXPLANATION_TEMPLATE["question"],
             "subject": analysis_payload.get("detectedSubject") or EXPLANATION_TEMPLATE["subject"],
             "finalAnswer": (math_explanation or llm_bundle or {}).get("finalAnswer")
             or analysis_payload.get("finalAnswer")
@@ -421,15 +425,16 @@ class VidyaAICore:
         db: Session,
         *,
         user: UserProfile,
+        analysis_payload: dict[str, Any] | None = None,
         analysis_id: int | None = None,
         topic: str | None = None,
         difficulty: str | None = None,
         question_count: int = 10,
         language: str = "en",
         adaptive: bool = True,
+        allow_llm: bool = True,
     ) -> dict[str, Any]:
-        analysis_payload = None
-        if analysis_id is not None:
+        if analysis_payload is None and analysis_id is not None:
             row = db.get(HomeworkAnalysis, analysis_id)
             analysis_payload = _analysis_payload_from_row(row)
         return self.quiz_service.generate_quiz(
@@ -442,6 +447,7 @@ class VidyaAICore:
             question_count=question_count,
             language=language,
             adaptive=adaptive,
+            allow_llm=allow_llm,
         )
 
     def answer_doubt(

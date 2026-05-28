@@ -189,29 +189,29 @@ PERFORMANCE_BARS = [
 ]
 
 EXPLANATION_TEMPLATE = {
-    "question": "Solve for x: 3x + 7 = 22",
+    "question": "Upload a handwritten or scanned question to see the explanation here.",
     "subject": {
-        "id": "maths",
-        "name": "Maths",
-        "confidence": 0.96,
-        "reason": "The question contains a linear equation.",
+        "id": "handwritten",
+        "name": "Homework",
+        "confidence": 0.0,
+        "reason": "Placeholder shown until the uploaded scan is processed.",
     },
-    "finalAnswer": "x = 5",
+    "finalAnswer": "Waiting for OCR and analysis.",
     "steps": [
         {
             "stepNum": 1,
-            "title": "Identify the variable",
-            "desc": "We want to isolate the unknown value on one side of the equation.",
+            "title": "Upload a clear image or PDF",
+            "desc": "The app reads the handwritten text from your file.",
         },
         {
             "stepNum": 2,
-            "title": "Remove the constant term",
-            "desc": "Undo the addition or subtraction on the variable side first.",
+            "title": "Extract the text",
+            "desc": "OCR and the language model turn the scan into text the tutor can use.",
         },
         {
             "stepNum": 3,
-            "title": "Divide by the coefficient",
-            "desc": "Divide both sides by the number multiplying the variable.",
+            "title": "Open the explanation",
+            "desc": "Once processing is complete, the real steps and answer appear here.",
         },
     ],
 }

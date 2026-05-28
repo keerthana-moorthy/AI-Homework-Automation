@@ -28,7 +28,7 @@ class DocumentRouteDecision:
         return asdict(self)
 
 
-def _pdf_text_preview(file_bytes: bytes, max_pages: int = 3) -> tuple[int, str]:
+def _pdf_text_preview(file_bytes: bytes, max_pages: int = 5) -> tuple[int, str]:
     if fitz is None:
         return 0, ""
 

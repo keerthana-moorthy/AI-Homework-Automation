@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import base64
+import os
 import re
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -21,14 +23,53 @@ try:  # Optional dependency for image preprocessing.
 except ImportError:  # pragma: no cover - handled at runtime.
     cv2 = None
 
+EASYOCR_MODULE_PATH = Path(__file__).resolve().parent.parent / ".cache" / "easyocr"
+os.environ["EASYOCR_MODULE_PATH"] = str(EASYOCR_MODULE_PATH)
+
+try:  # Optional dependency used to unblock torchvision imports for EasyOCR.
+    import torch  # type: ignore
+except ImportError:  # pragma: no cover - handled at runtime.
+    torch = None
+
+if torch is not None:
+    try:
+        _torchvision_stub_lib = torch.library.Library("torchvision", "DEF")
+        _torchvision_stub_lib.define("nms(Tensor dets, Tensor scores, float iou_threshold) -> Tensor")
+    except Exception:  # noqa: BLE001
+        pass
+
 try:  # Optional dependency for OCR.
     import easyocr  # type: ignore
 except Exception:  # pragma: no cover - handled at runtime.
     easyocr = None
 
 
+EASYOCR_MODEL_DIR = EASYOCR_MODULE_PATH / "model"
+
+
 def _encode_data_url(raw_bytes: bytes, mime_type: str) -> str:
     return f"data:{mime_type};base64,{base64.b64encode(raw_bytes).decode('utf-8')}"
+
+
+def _decode_data_url(data_url: str | None) -> tuple[bytes | None, str]:
+    if not data_url:
+        return None, "image/png"
+
+    payload = str(data_url).strip()
+    mime_type = "image/png"
+    if payload.startswith("data:") and "," in payload:
+        header, encoded = payload.split(",", 1)
+        if header.startswith("data:"):
+            mime_type = header[5:].split(";", 1)[0] or mime_type
+        try:
+            return base64.b64decode(encoded, validate=False), mime_type
+        except Exception:  # noqa: BLE001
+            return None, mime_type
+
+    try:
+        return base64.b64decode(payload, validate=False), mime_type
+    except Exception:  # noqa: BLE001
+        return None, mime_type
 
 
 def _image_to_array(image_bytes: bytes) -> np.ndarray | None:
@@ -69,7 +110,13 @@ def _easyocr_reader():
     if easyocr is None:
         return None
     try:
-        return easyocr.Reader(["en", "ta", "hi"], gpu=False, verbose=False)
+        EASYOCR_MODEL_DIR.mkdir(parents=True, exist_ok=True)
+        return easyocr.Reader(
+            ["en", "ta", "hi"],
+            gpu=False,
+            verbose=False,
+            model_storage_directory=str(EASYOCR_MODEL_DIR),
+        )
     except Exception:  # noqa: BLE001
         return None
 
@@ -141,7 +188,7 @@ def _extract_llm_vision_text(
         return "", 0.0
 
 
-def _extract_pdf_document(file_bytes: bytes, max_pages: int = 3) -> dict[str, Any]:
+def _extract_pdf_document(file_bytes: bytes, max_pages: int = 5) -> dict[str, Any]:
     if fitz is None:
         return {"pageCount": 0, "pageTexts": [], "pageImages": [], "rawText": "", "blocks": []}
 
@@ -170,7 +217,7 @@ def _extract_pdf_document(file_bytes: bytes, max_pages: int = 3) -> dict[str, An
                     }
                 )
 
-        pixmap = page.get_pixmap(matrix=fitz.Matrix(1.6, 1.6), alpha=False)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
         page_images.append({"pageNum": index + 1, "imageDataUrl": _encode_data_url(pixmap.tobytes("png"), "image/png")})
 
     return {
@@ -180,6 +227,36 @@ def _extract_pdf_document(file_bytes: bytes, max_pages: int = 3) -> dict[str, An
         "blocks": blocks,
         "rawText": normalize_text(" ".join(item["text"] for item in page_texts)),
     }
+
+
+def _extract_pdf_page_ocr_candidates(
+    *,
+    page_image_data_url: str | None,
+    file_name: str | None,
+    file_type: str | None,
+    language_hint: str | None,
+) -> list[tuple[str, float, str]]:
+    image_bytes, mime_type = _decode_data_url(page_image_data_url)
+    if image_bytes is None:
+        return []
+
+    candidates: list[tuple[str, float, str]] = []
+
+    easyocr_text, easyocr_conf = _extract_easyocr_text(_preprocess_image(image_bytes))
+    if easyocr_text:
+        candidates.append((easyocr_text, clamp(easyocr_conf or 0.7, 0.0, 1.0), "pdf-page-easyocr"))
+
+    llm_text, llm_conf = _extract_llm_vision_text(
+        image_bytes=image_bytes,
+        mime_type=mime_type or "image/png",
+        file_name=file_name,
+        file_type=file_type or "application/pdf",
+        language_hint=language_hint,
+    )
+    if llm_text:
+        candidates.append((llm_text, llm_conf or 0.85, "pdf-page-vision"))
+
+    return candidates
 
 
 def extract_document_ocr(
@@ -211,6 +288,9 @@ def extract_document_ocr(
     page_images = []
     page_blocks = []
     candidates: list[tuple[str, float, str]] = []
+    pdf_ocr_page_texts: list[dict[str, Any]] = []
+    pdf_ocr_combined_texts: list[str] = []
+    pdf_ocr_confidences: list[float] = []
 
     if pdf_context is not None:
         page_texts = pdf_context["pageTexts"]
@@ -219,10 +299,40 @@ def extract_document_ocr(
         if pdf_context["rawText"]:
             candidates.append((pdf_context["rawText"], 0.96, "pdf-text"))
 
-    if file_bytes and route_decision.route != "direct-extraction":
+        if route_decision.route != "direct-extraction" and page_images:
+            for page_image in page_images[:5]:
+                page_candidates = _extract_pdf_page_ocr_candidates(
+                    page_image_data_url=page_image.get("imageDataUrl"),
+                    file_name=file_name,
+                    file_type=file_type,
+                    language_hint=language_hint,
+                )
+                if not page_candidates:
+                    continue
+
+                best_page_candidate = max(page_candidates, key=lambda item: (len(item[0]), item[1]))
+                if best_page_candidate[0]:
+                    pdf_ocr_page_texts.append(
+                        {
+                            "pageNum": page_image.get("pageNum"),
+                            "text": best_page_candidate[0],
+                        }
+                    )
+                    pdf_ocr_combined_texts.append(best_page_candidate[0])
+                    pdf_ocr_confidences.append(best_page_candidate[1])
+
+                candidates.extend(page_candidates)
+
+            combined_pdf_ocr_text = normalize_text(" ".join(pdf_ocr_combined_texts))
+            if combined_pdf_ocr_text:
+                combined_confidence = float(sum(pdf_ocr_confidences) / len(pdf_ocr_confidences)) if pdf_ocr_confidences else 0.8
+                candidates.append((combined_pdf_ocr_text, clamp(combined_confidence, 0.0, 1.0), "pdf-ocr"))
+                if not page_texts:
+                    page_texts = pdf_ocr_page_texts
+
+    if file_bytes and route_decision.route != "direct-extraction" and route_decision.file_kind == "image":
         image_bytes = file_bytes
-        if route_decision.file_kind == "image":
-            image_bytes = _preprocess_image(file_bytes)
+        image_bytes = _preprocess_image(file_bytes)
         easyocr_text, easyocr_conf = _extract_easyocr_text(image_bytes)
         if easyocr_text:
             candidates.append((easyocr_text, clamp(easyocr_conf or 0.7, 0.0, 1.0), "easyocr"))
@@ -237,7 +347,7 @@ def extract_document_ocr(
         if groq_text:
             candidates.append((groq_text, groq_conf or 0.85, "groq-vision"))
 
-        if not candidates and route_decision.file_kind == "image":
+        if not candidates:
             candidates.append((normalize_text(""), 0.0, "fallback"))
 
     raw_text = ""

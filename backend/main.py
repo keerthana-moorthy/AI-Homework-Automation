@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import re
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -27,7 +28,7 @@ from .constants import (
 )
 from .services.llm_router import get_llm_router
 from .database import Base, SessionLocal, engine, get_db
-from .models import HomeworkAnalysis, QuizAttempt, QuizQuestion, Subject, Subscription, UserProfile
+from .models import AdaptiveQuizSession, HomeworkAnalysis, QuizAttempt, QuizQuestion, Subject, Subscription, UserProfile
 from .schemas import (
     AnalyticsSummaryOut,
     AppInfo,
@@ -63,7 +64,7 @@ from .services.analytics_service import build_recommendations, build_student_ana
 from .services.orchestrator import get_vidya_ai_core
 from .services.rag_service import get_rag_service
 from .services.planner import build_daily_plan, build_insights
-from .services.quiz_service import get_quiz_service
+from .services.quiz_service import build_adaptive_quiz_state, get_quiz_service
 from .services.chat import answer_explanation_chat
 from .services.solver import explanation_from_analysis
 from .websocket_manager import ConnectionManager
@@ -264,7 +265,34 @@ def build_onboarding_payload() -> dict[str, Any]:
     ).model_dump(by_alias=True, exclude_none=True)
 
 
+_OPTION_PREFIX_RE = re.compile(r"^\s*(?:option\s*)?[A-Da-d]\s*(?:\)|\.|:|-)\s*", re.IGNORECASE)
+
+
+def _canonical_quiz_option_text(value: str | None) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    text = _OPTION_PREFIX_RE.sub("", text)
+    return text.casefold()
+
+
+def active_adaptive_quiz_session(db: Session, user: UserProfile) -> AdaptiveQuizSession | None:
+    return db.scalar(
+        select(AdaptiveQuizSession)
+        .where(AdaptiveQuizSession.user_id == user.id, AdaptiveQuizSession.status == "active")
+        .order_by(desc(AdaptiveQuizSession.created_at), desc(AdaptiveQuizSession.id))
+    )
+
+
 def build_quiz_state(db: Session, user: UserProfile) -> dict[str, Any]:
+    adaptive_session = active_adaptive_quiz_session(db, user)
+    if adaptive_session is not None:
+        adaptive_state = build_adaptive_quiz_state(adaptive_session)
+        if adaptive_state.questions:
+            return adaptive_state.model_dump(by_alias=True, exclude_none=True)
+
+        adaptive_session.status = "inactive"
+        db.add(adaptive_session)
+        db.commit()
+
     questions = [serialize_question(question) for question in db.scalars(select(QuizQuestion).order_by(QuizQuestion.id.asc())).all()]
     current_index = user.quiz_current_index % len(questions) if questions else 0
     current_question = questions[current_index] if questions else None
@@ -282,6 +310,26 @@ def build_quiz_state(db: Session, user: UserProfile) -> dict[str, Any]:
         ),
         progress_percent=((current_index + 1) / max(1, len(questions))) * 100,
     ).model_dump(by_alias=True, exclude_none=True)
+
+
+def ensure_adaptive_quiz_session(db: Session, user: UserProfile) -> None:
+    if active_adaptive_quiz_session(db, user) is not None:
+        return
+
+    row = latest_analysis_row(db, user)
+    if row is None:
+        return
+
+    analysis_payload = analysis_payload_from_row(row)
+    get_vidya_ai_core().generate_quiz(
+        db,
+        user=user,
+        analysis_payload=analysis_payload,
+        analysis_id=row.id,
+        question_count=10,
+        language=user.language or "en",
+        adaptive=True,
+    )
 
 
 def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
@@ -902,15 +950,27 @@ async def analyze(payload: HomeworkAnalyzeRequest, db: Session = Depends(get_db)
 @app.get("/api/quiz")
 def quiz(db: Session = Depends(get_db)) -> dict[str, Any]:
     user = get_primary_user(db)
-    return {"ok": True, **build_quiz_state(db, user)}
+    quiz_state = build_quiz_state(db, user)
+    if active_adaptive_quiz_session(db, user) is None and latest_analysis_row(db, user) is not None:
+        ensure_adaptive_quiz_session(db, user)
+        quiz_state = build_quiz_state(db, user)
+    return {"ok": True, **quiz_state}
 
 
 @app.get("/api/quiz/question")
 def quiz_question(id: str | None = None, db: Session = Depends(get_db)) -> dict[str, Any]:
+    user = get_primary_user(db)
+    adaptive_session = active_adaptive_quiz_session(db, user)
+    if adaptive_session is not None:
+        adaptive_state = build_adaptive_quiz_state(adaptive_session)
+        if adaptive_state.questions:
+            question = adaptive_state.current_question if id is None else next((entry for entry in adaptive_state.questions if entry.id == id), None)
+            if question is not None:
+                return {"ok": True, "question": question.model_dump(by_alias=True, exclude_none=True)}
+
     if id:
         question = db.get(QuizQuestion, id)
     else:
-        user = get_primary_user(db)
         question = get_question_row(db, user.quiz_current_index)
     if question is None:
         raise HTTPException(status_code=404, detail="Quiz question not found")
@@ -921,7 +981,8 @@ def quiz_question(id: str | None = None, db: Session = Depends(get_db)) -> dict[
 async def quiz_answer(payload: QuizAnswerRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
     user = get_primary_user(db)
 
-    if payload.quiz_session_id:
+    adaptive_session = active_adaptive_quiz_session(db, user)
+    if payload.quiz_session_id or adaptive_session is not None:
         try:
             response = get_quiz_service().answer_quiz(
                 db,
@@ -932,7 +993,9 @@ async def quiz_answer(payload: QuizAnswerRequest, db: Session = Depends(get_db))
                 response_seconds=payload.response_seconds,
             )
         except ValueError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
+            detail = str(exc)
+            status_code = 409 if any(token in detail.lower() for token in ("already been answered", "not been answered", "not active")) else 404
+            raise HTTPException(status_code=status_code, detail=detail) from exc
         await broadcast_event("adaptive_quiz_answered", response)
         return response
 
@@ -943,7 +1006,7 @@ async def quiz_answer(payload: QuizAnswerRequest, db: Session = Depends(get_db))
     if user.quiz_status != "idle":
         raise HTTPException(status_code=409, detail="The current question has already been answered")
 
-    correct = payload.selected_option == question.correct_option
+    correct = _canonical_quiz_option_text(payload.selected_option) == _canonical_quiz_option_text(question.correct_option)
     xp_awarded = 10 if correct else 0
 
     user.quiz_selected_option = payload.selected_option
@@ -986,6 +1049,21 @@ async def quiz_answer(payload: QuizAnswerRequest, db: Session = Depends(get_db))
 @app.post("/api/quiz/next")
 async def quiz_next(db: Session = Depends(get_db)) -> dict[str, Any]:
     user = get_primary_user(db)
+    adaptive_session = active_adaptive_quiz_session(db, user)
+    if adaptive_session is not None:
+        try:
+            response = get_quiz_service().next_quiz(
+                db,
+                user=user,
+                quiz_session_id=None,
+            )
+        except ValueError as exc:
+            detail = str(exc)
+            status_code = 409 if any(token in detail.lower() for token in ("not been answered", "not active")) else 404
+            raise HTTPException(status_code=status_code, detail=detail) from exc
+        await broadcast_event("adaptive_quiz_advanced", response)
+        return response
+
     questions = list(db.scalars(select(QuizQuestion).order_by(QuizQuestion.id.asc())).all())
     if not questions:
         raise HTTPException(status_code=404, detail="No quiz questions are available")
@@ -1009,15 +1087,23 @@ async def quiz_next(db: Session = Depends(get_db)) -> dict[str, Any]:
 @app.post("/api/quiz/reset")
 async def quiz_reset(db: Session = Depends(get_db)) -> dict[str, Any]:
     user = get_primary_user(db)
-    user.quiz_current_index = 0
-    user.quiz_selected_option = None
-    user.quiz_status = "idle"
-    user.quiz_xp_earned_this_session = 0
-    db.add(user)
-    db.commit()
+    adaptive_session = active_adaptive_quiz_session(db, user)
+    if adaptive_session is not None:
+        try:
+            get_quiz_service().complete_quiz_session(db, user=user, quiz_session_id=None)
+        except ValueError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+    else:
+        user.quiz_current_index = 0
+        user.quiz_selected_option = None
+        user.quiz_status = "idle"
+        user.quiz_xp_earned_this_session = 0
+        db.add(user)
+        db.commit()
 
+    ensure_adaptive_quiz_session(db, user)
     response = {"ok": True, "quiz": build_quiz_state(db, user)}
-    await broadcast_event("quiz_reset", response)
+    await broadcast_event("adaptive_quiz_reset" if active_adaptive_quiz_session(db, user) is not None else "quiz_reset", response)
     return response
 
 

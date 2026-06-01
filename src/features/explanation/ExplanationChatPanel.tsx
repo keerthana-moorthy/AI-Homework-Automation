@@ -44,11 +44,11 @@ const getScanLabel = (scanMethod?: string, sourceType?: string) => {
 const buildGreeting = (explanation: ExplanationPayload | null) => {
   const hasGroundedContent = Boolean(
     explanation?.analysisId
-      || explanation?.extractedText
-      || explanation?.summary
-      || explanation?.detailedExplanation
-      || (explanation?.steps?.length ?? 0) > 0
-      || explanation?.fileUrl
+    || explanation?.extractedText
+    || explanation?.summary
+    || explanation?.detailedExplanation
+    || (explanation?.steps?.length ?? 0) > 0
+    || explanation?.fileUrl
   );
   const question = explanation?.question?.trim();
   const summary = explanation?.summary?.trim();
@@ -67,11 +67,11 @@ const buildGreeting = (explanation: ExplanationPayload | null) => {
 const buildSuggestions = (explanation: ExplanationPayload | null) => {
   const hasGroundedContent = Boolean(
     explanation?.analysisId
-      || explanation?.extractedText
-      || explanation?.summary
-      || explanation?.detailedExplanation
-      || (explanation?.steps?.length ?? 0) > 0
-      || explanation?.fileUrl
+    || explanation?.extractedText
+    || explanation?.summary
+    || explanation?.detailedExplanation
+    || (explanation?.steps?.length ?? 0) > 0
+    || explanation?.fileUrl
   );
   const suggestions = [
     'Explain this homework in simple words',
@@ -130,11 +130,11 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
   const scanLabel = getScanLabel(explanation?.scanMethod, explanation?.sourceType);
   const canChat = Boolean(
     explanation?.analysisId
-      || explanation?.extractedText
-      || explanation?.summary
-      || explanation?.detailedExplanation
-      || (explanation?.steps?.length ?? 0) > 0
-      || explanation?.fileUrl
+    || explanation?.extractedText
+    || explanation?.summary
+    || explanation?.detailedExplanation
+    || (explanation?.steps?.length ?? 0) > 0
+    || explanation?.fileUrl
   );
 
   useEffect(() => {
@@ -325,11 +325,10 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
                 ) : null}
 
                 <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-6 whitespace-pre-line ${
-                    isUser
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-6 whitespace-pre-line ${isUser
                       ? 'bg-brand-purple text-white shadow-sm'
                       : 'bg-gray-50 text-gray-700 border border-gray-100'
-                  }`}
+                    }`}
                 >
                   {message.content}
                 </div>
@@ -373,7 +372,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
           <textarea
             value={input}
             onChange={(event) => setInput(event.target.value)}
-            placeholder="Ask about a step, the OCR text, or why the final answer works..."
+            placeholder="I'm here to help! Ask me anything..."
             rows={3}
             disabled={isSending || !canChat}
             className="w-full resize-none rounded-2xl border border-gray-200 bg-white px-4 py-3 text-sm font-semibold text-gray-700 outline-none transition focus:border-brand-purple disabled:cursor-not-allowed disabled:bg-gray-50"

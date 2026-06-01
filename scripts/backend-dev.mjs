@@ -1,5 +1,20 @@
 import { spawn } from 'node:child_process';
 import net from 'node:net';
+import fs from 'node:fs';
+import path from 'node:path';
+
+const pythonCmd = (() => {
+  const isWin = process.platform === 'win32';
+  const venvPython = isWin
+    ? path.join(process.cwd(), '.venv', 'Scripts', 'python.exe')
+    : path.join(process.cwd(), '.venv', 'bin', 'python');
+
+  if (fs.existsSync(venvPython)) {
+    return venvPython;
+  }
+  return 'python';
+})();
+
 
 const port = Number(process.env.BACKEND_PORT || 4000);
 const backendUrl = `http://127.0.0.1:${port}`;
@@ -36,7 +51,7 @@ async function isPortListening() {
   });
 }
 
-async function waitForHealthy(maxWaitMs = 15000) {
+async function waitForHealthy(maxWaitMs = 60000) {
   const startedAt = Date.now();
 
   while (Date.now() - startedAt < maxWaitMs) {
@@ -66,7 +81,7 @@ if (await isPortListening()) {
   process.exit(1);
 }
 
-const child = spawn('python', [
+const child = spawn(pythonCmd, [
   '-m',
   'uvicorn',
   'backend.main:app',

@@ -4,7 +4,7 @@ import type { UserState } from '../../types/types';
 
 interface AppState {
   isLoggedIn: boolean;
-  activeScreen: number; // 0: Dashboard, 1: Onboarding, 2: Upload, 3: Explanation, 4: Quiz, 5: Parent
+  activeScreen: number; // 0: Dashboard, 1: Onboarding, 2: Upload, 3: Explanation, 4: Quiz, 5: Parent, 6: Tutor
   language: 'en' | 'ta' | 'both';
   selectedSubjectId: string | null;
   loading: boolean;

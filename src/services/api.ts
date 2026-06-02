@@ -82,7 +82,7 @@ export interface OnboardingPayload {
   cta: { primary: string; secondary: string };
 }
 
-export interface StepPayload extends HWStep {}
+export interface StepPayload extends HWStep { }
 
 export interface ExplanationPayload {
   question: string;
@@ -122,6 +122,24 @@ export interface ExplanationChatResponse {
   sourceType?: string;
   questionText?: string;
 }
+
+export interface DoubtRequest {
+  analysisId?: number | null;
+  message: string;
+  language?: 'en' | 'ta' | 'both';
+  history?: ExplanationChatMessage[];
+  threadId?: number | null;
+}
+
+export interface DoubtResponse {
+  analysisId?: number | null;
+  threadId?: number | null;
+  reply: string;
+  citations?: Array<Record<string, any>>;
+  suggestedQuestions?: string[];
+  grounded?: boolean;
+}
+
 
 export interface QuizStatePayload {
   questions: QuizQuestion[];
@@ -272,6 +290,11 @@ export const getExplanation = (analysisId?: number | null) =>
   request<ExplanationPayload>(`/api/explanation${analysisId ? `?analysisId=${encodeURIComponent(String(analysisId))}` : ''}`);
 export const chatExplanation = (payload: ExplanationChatRequest) =>
   request<ExplanationChatResponse>('/api/explanation/chat', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+export const chatDoubt = (payload: DoubtRequest) =>
+  request<DoubtResponse>('/api/chat/doubt', {
     method: 'POST',
     body: JSON.stringify(payload),
   });

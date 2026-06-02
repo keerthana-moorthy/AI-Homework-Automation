@@ -92,7 +92,7 @@ ACTION_CARDS = [
         "label": "Ask a Doubt",
         "subtext": "Instant AI help",
         "cardType": "purple",
-        "targetScreen": 3,
+        "targetScreen": 6,
     },
     {
         "id": "quiz",

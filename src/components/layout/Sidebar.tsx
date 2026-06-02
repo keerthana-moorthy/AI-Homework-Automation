@@ -8,7 +8,8 @@ import {
   Zap, 
   Users, 
   HelpCircle, 
-  LogOut 
+  LogOut,
+  MessageSquare
 } from 'lucide-react';
 import { logout as logoutSession, toUserState, updateScreen } from '../../services/api';
 
@@ -25,7 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
   const menuItems = [
     { name: 'Dashboard', icon: Home, screen: 0 },
     { name: 'Scan Homework', icon: Camera, screen: 2 },
-    { name: 'Explanation', icon: BrainCircuit, screen: 3 },
+    { name: 'AI Tutor', icon: MessageSquare, screen: 6 },
     { name: 'Daily Quiz', icon: Zap, screen: 4 },
     { name: 'Parent View', icon: Users, screen: 5 },
     { name: 'Intro Tour', icon: HelpCircle, screen: 1 },

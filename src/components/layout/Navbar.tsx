@@ -22,6 +22,8 @@ export const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
         return 'Daily Practice Quiz';
       case 5:
         return 'Parent Monitoring Portal';
+      case 6:
+        return 'Vidya AI Tutor';
       case 1:
         return 'Vidya AI Intro Tour';
       default:

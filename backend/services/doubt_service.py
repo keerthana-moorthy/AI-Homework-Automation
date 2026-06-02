@@ -53,17 +53,76 @@ def _analysis_payload_from_row(row: HomeworkAnalysis | None) -> dict[str, Any] |
     return payload
 
 
-def _suggested_questions(analysis_payload: dict[str, Any] | None) -> list[str]:
+def _suggested_questions(
+    analysis_payload: dict[str, Any] | None,
+    *,
+    message: str | None = None,
+    intent: str | None = None,
+    general_mode: bool = False,
+    context_pack: dict[str, Any] | None = None,
+) -> list[str]:
+    normalized_message = normalize_text(message)
+    normalized_intent = normalize_text(intent).lower()
+
     if not analysis_payload:
-        return [
-            "Can you explain the scan summary?",
-            "What is the first step?",
-            "Can you simplify the concept?",
-        ]
+        if general_mode:
+            general_suggestions = {
+                "quiz": [
+                    "Ask me a quick practice question",
+                    "Test whether I understand this topic",
+                    "Give me a harder challenge",
+                ],
+                "simplify": [
+                    "Explain it in simple words",
+                    "Break it into small steps",
+                    "Use an easy example",
+                ],
+                "example": [
+                    "Give me a real-life example",
+                    "Show me another example",
+                    "Explain it with a simple story",
+                ],
+                "translate": [
+                    "Translate this more clearly",
+                    "Keep the meaning but use simpler words",
+                    "Explain it in both Tamil and English",
+                ],
+                "reason": [
+                    "Explain why this makes sense",
+                    "Show me the reasoning step by step",
+                    "What is the key idea behind this?",
+                ],
+                "step-by-step": [
+                    "Break it into steps",
+                    "Explain the first step clearly",
+                    "Show the full process slowly",
+                ],
+            }
+            suggestions = general_suggestions.get(
+                normalized_intent,
+                [
+                    "Explain this in simple words",
+                    "Give me an example",
+                    "Quiz me on this",
+                ],
+            )
+            if normalized_message:
+                suggestions = [*suggestions, "What is the clearest way to understand this?"]
+        else:
+            suggestions = [
+                "Can you explain the scan summary?",
+                "What is the first step?",
+                "Can you simplify the concept?",
+            ]
+            if normalized_message:
+                suggestions.append("Restate the question in easy language")
+        return suggestions[:5]
 
     question = normalize_text(analysis_payload.get("questionText"))
     final_answer = normalize_text(analysis_payload.get("finalAnswer"))
     steps = analysis_payload.get("steps") if isinstance(analysis_payload.get("steps"), list) else []
+    scan = analysis_payload.get("scan") if isinstance(analysis_payload.get("scan"), dict) else {}
+    context_text = normalize_text(context_pack.get("contextText")) if isinstance(context_pack, dict) else ""
 
     suggestions = [
         "Explain the homework in simple words",
@@ -75,6 +134,10 @@ def _suggested_questions(analysis_payload: dict[str, Any] | None) -> list[str]:
         suggestions.append(f"Why is the answer {final_answer}?")
     if question:
         suggestions.append("Restate the question in easy language")
+    if context_text or scan.get("summary"):
+        suggestions.append("What does the scan context mean?")
+    if normalized_message and normalized_intent == "step-by-step":
+        suggestions.insert(0, "Walk me through this step by step")
 
     deduped: list[str] = []
     for item in suggestions:

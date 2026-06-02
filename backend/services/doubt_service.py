@@ -85,7 +85,7 @@ def _suggested_questions(analysis_payload: dict[str, Any] | None) -> list[str]:
 
 def _build_thread_title(analysis_payload: dict[str, Any] | None) -> str:
     if not analysis_payload:
-        return "Homework doubt"
+        return "General study session"
     question = normalize_text(analysis_payload.get("questionText"))
     if question:
         return question[:80]
@@ -215,22 +215,27 @@ class DoubtService:
         thread_id: int | None = None,
     ) -> dict[str, Any]:
         normalized_message = normalize_text(message)
+        is_general_tutor = (analysis_id == -1)
         if not normalized_message:
             return {
                 "threadId": thread_id,
                 "analysisId": analysis_id,
-                "reply": "Please ask a question about the scanned homework.",
+                "reply": "Please ask any educational or general knowledge question." if is_general_tutor else "Please ask a question about the scanned homework.",
                 "citations": [],
-                "suggestedQuestions": _suggested_questions(analysis_payload),
+                "suggestedQuestions": ["What is photosynthesis?", "Explain gravity in simple terms", "Help me understand fractions"] if is_general_tutor else _suggested_questions(analysis_payload),
                 "grounded": True,
             }
 
-        if analysis_payload is None and analysis_id is not None:
-            row = db.get(HomeworkAnalysis, analysis_id)
-            analysis_payload = _analysis_payload_from_row(row)
-        if analysis_payload is None:
-            analysis_payload = self._get_latest_analysis(db, user)
-        active_analysis_id = analysis_id or (analysis_payload.get("analysisId") if analysis_payload else None)
+        if is_general_tutor:
+            analysis_payload = None
+            active_analysis_id = -1
+        else:
+            if analysis_payload is None and analysis_id is not None:
+                row = db.get(HomeworkAnalysis, analysis_id)
+                analysis_payload = _analysis_payload_from_row(row)
+            if analysis_payload is None:
+                analysis_payload = self._get_latest_analysis(db, user)
+            active_analysis_id = analysis_id or (analysis_payload.get("analysisId") if analysis_payload else None)
 
         thread = self._get_thread(
             db,
@@ -260,23 +265,31 @@ class DoubtService:
         system_language = (
             "Answer in Tamil." if language == "ta" else "Answer in simple mixed Tamil and English." if language == "both" else "Answer in simple English."
         )
-        system_prompt = (
-            "You are Vidya AI, a grounded doubt-solving tutor for the same homework the student uploaded. "
-            "Only use the provided homework context, scan summary, detailed explanation, and retrieved passages. "
-            "If the answer is not present in the context, say what is missing and ask for a clearer upload or more details. "
-            "Explain step by step, using short paragraphs and student-friendly language. "
-            f"{system_language}"
-        )
-        context_summary = "\n".join(
-            [
-                f"Analysis ID: {active_analysis_id or 'latest'}",
-                f"Homework question: {normalize_text(analysis_payload.get('questionText') if analysis_payload else '') or 'Not available'}",
-                f"Summary: {normalize_text(analysis_payload.get('summary') if analysis_payload else '') or 'Not available'}",
-                f"Detailed explanation: {normalize_text(analysis_payload.get('detailedExplanation') if analysis_payload else '') or 'Not available'}",
-                f"Final answer: {normalize_text(analysis_payload.get('finalAnswer') if analysis_payload else '') or 'Not available'}",
-                f"Retrieved context:\n{context_text or 'No extra context retrieved.'}",
-            ]
-        )
+        if is_general_tutor:
+            system_prompt = (
+                "You are Vidya AI, a friendly and helpful study buddy and tutor for general knowledge and school subjects. "
+                "Explain the topic clearly using student-friendly language, short paragraphs, and clear step-by-step guidance. "
+                f"{system_language}"
+            )
+            context_summary = "General knowledge query. No homework context is active."
+        else:
+            system_prompt = (
+                "You are Vidya AI, a grounded doubt-solving tutor for the same homework the student uploaded. "
+                "Only use the provided homework context, scan summary, detailed explanation, and retrieved passages. "
+                "If the answer is not present in the context, say what is missing and ask for a clearer upload or more details. "
+                "Explain step by step, using short paragraphs and student-friendly language. "
+                f"{system_language}"
+            )
+            context_summary = "\n".join(
+                [
+                    f"Analysis ID: {active_analysis_id or 'latest'}",
+                    f"Homework question: {normalize_text(analysis_payload.get('questionText') if analysis_payload else '') or 'Not available'}",
+                    f"Summary: {normalize_text(analysis_payload.get('summary') if analysis_payload else '') or 'Not available'}",
+                    f"Detailed explanation: {normalize_text(analysis_payload.get('detailedExplanation') if analysis_payload else '') or 'Not available'}",
+                    f"Final answer: {normalize_text(analysis_payload.get('finalAnswer') if analysis_payload else '') or 'Not available'}",
+                    f"Retrieved context:\n{context_text or 'No extra context retrieved.'}",
+                ]
+            )
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "system", "content": f"Grounded context:\n{context_summary}"},
@@ -306,12 +319,15 @@ class DoubtService:
                 reply = ""
 
         if not reply:
-            reply = _fallback_reply(
-                analysis_payload=analysis_payload,
-                question=normalized_message,
-                language=language,
-                context_text=context_text,
-            )
+            if is_general_tutor:
+                reply = f"I am here to help you learn about any topic! You asked: {normalized_message}."
+            else:
+                reply = _fallback_reply(
+                    analysis_payload=analysis_payload,
+                    question=normalized_message,
+                    language=language,
+                    context_text=context_text,
+                )
 
         reply = translate_text(reply, target_language=language)
         user_message = DoubtMessage(
@@ -339,7 +355,12 @@ class DoubtService:
             analysis_id=active_analysis_id,
             reply=reply,
             citations=citations,
-            suggested_questions=_suggested_questions(analysis_payload),
+            suggested_questions=[
+                "Explain this in more detail",
+                "Can you give me an example?",
+                "Simplify this explanation",
+                "Ask me a question about this"
+            ] if is_general_tutor else _suggested_questions(analysis_payload),
             grounded=True,
         ).model_dump()
 

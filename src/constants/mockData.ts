@@ -10,7 +10,7 @@ export const SUBJECTS: Subject[] = [
 
 export const ACTION_CARDS: ActionCard[] = [
   { id: 'scan', emoji: '📸', label: 'Scan Homework', subtext: 'Upload & solve', cardType: 'orange', targetScreen: 2 },
-  { id: 'doubt', emoji: '💬', label: 'Ask a Doubt', subtext: 'Instant AI help', cardType: 'purple', targetScreen: 3 },
+  { id: 'doubt', emoji: '💬', label: 'Ask a Doubt', subtext: 'Instant AI help', cardType: 'purple', targetScreen: 6 },
   { id: 'quiz', emoji: '⚡', label: 'Daily Quiz', subtext: 'Earn 50 XP', cardType: 'green', targetScreen: 4 },
   { id: 'plan', emoji: '📅', label: 'Study Plan', subtext: 'Today\'s goals', cardType: 'blue', targetScreen: 0 },
 ];

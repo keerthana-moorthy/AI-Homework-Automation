@@ -7,6 +7,7 @@ import OnboardingView from './features/onboarding/OnboardingView';
 import ParentView from './features/parent/ParentView';
 import QuizView from './features/quiz/QuizView';
 import UploadView from './features/upload/UploadView';
+import TutorView from './features/tutor/TutorView';
 import { getSession, toUserState } from './services/api';
 import { hydrateSession, setLoading } from './store/slices/appSlice';
 import store, { useAppDispatch, useAppSelector } from './store';
@@ -85,6 +86,8 @@ const MainAppContent: React.FC = () => {
         return <QuizView />;
       case 5:
         return <ParentView />;
+      case 6:
+        return <TutorView />;
       default:
         return <DashboardView />;
     }

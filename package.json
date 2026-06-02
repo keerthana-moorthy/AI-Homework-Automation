@@ -1,0 +1,35 @@
+{
+  "name": "ai-homework-automation",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-full.mjs",
+    "dev:full": "node scripts/dev-full.mjs",
+    "backend": "node scripts/backend-dev.mjs",
+    "build": "node scripts/vite-build.mjs",
+    "preview": "node scripts/vite-preview.mjs"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "^5.4.0",
+    "@reduxjs/toolkit": "^2.12.0",
+    "lucide-react": "^1.16.0",
+    "postcss": "^8.5.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-hook-form": "^7.76.1",
+    "react-redux": "^9.3.0",
+    "tailwindcss": "^4.3.0",
+    "yup": "^1.7.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.0",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.5.0",
+    "eslint": "^9.9.0",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.2"
+  }
+}

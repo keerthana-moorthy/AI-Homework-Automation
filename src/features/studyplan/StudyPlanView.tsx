@@ -3,6 +3,7 @@ import { useAppDispatch } from '../../store';
 import { setActiveScreen, addXp } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import FormUploadZone from '../../components/form/FormUploadZone';
+import AIResponseRenderer from '../../components/common/AIResponseRenderer';
 import Badge from '../../components/common/Badge';
 import {
   getLatestStudyPlan,
@@ -19,10 +20,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText, 
-  CheckCircle, 
-  BookOpen, 
   Trophy, 
-  Sparkles, 
   RefreshCw,
   Clock
 } from 'lucide-react';
@@ -475,7 +473,7 @@ export const StudyPlanView: React.FC = () => {
                 
                 {studyPlan.summary && (
                   <div className="bg-orange-50/40 p-4 rounded-2xl text-xs font-semibold leading-relaxed text-gray-600 border border-brand-orange/5 italic">
-                    "{studyPlan.summary}"
+                    <AIResponseRenderer content={studyPlan.summary} />
                   </div>
                 )}
 
@@ -533,7 +531,7 @@ export const StudyPlanView: React.FC = () => {
               <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm">
                 <div className="flex items-center justify-between border-b border-gray-100 pb-3 select-none">
                   <h4 className="text-base font-black text-gray-800">Timeline Checklist</h4>
-                  <Badge variant="orange" className="font-extrabold px-3 py-1 border border-brand-orangeBorder">
+                  <Badge variant="eng" className="font-extrabold px-3 py-1 border border-brand-orangeBorder">
                     🚀 Keep it up!
                   </Badge>
                 </div>
@@ -608,7 +606,7 @@ export const StudyPlanView: React.FC = () => {
 
                           <div className="flex items-center gap-2">
                             {allDone && (
-                              <Badge variant="green" className="py-0.5 px-2.5 text-[10px] font-black uppercase shrink-0">
+                              <Badge variant="sci" className="py-0.5 px-2.5 text-[10px] font-black uppercase shrink-0">
                                 Completed
                               </Badge>
                             )}
@@ -634,14 +632,12 @@ export const StudyPlanView: React.FC = () => {
                                   const isDescExpanded = !!expandedDescriptions[day.dayNum];
                                   
                                   if (!isLong) {
-                                    return <span>{desc}</span>;
+                                    return <AIResponseRenderer content={desc} />;
                                   }
                                   
                                   return (
                                     <div className="space-y-1.5">
-                                      <span>
-                                        {isDescExpanded ? desc : `${desc.slice(0, 150)}...`}
-                                      </span>
+                                      <AIResponseRenderer content={isDescExpanded ? desc : `${desc.slice(0, 150)}...`} />
                                       <button
                                         type="button"
                                         onClick={(e) => toggleDescriptionExpanded(day.dayNum, e)}

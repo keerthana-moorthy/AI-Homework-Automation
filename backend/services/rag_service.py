@@ -194,8 +194,22 @@ class RAGService:
         user_id: int | None = None,
         analysis_id: int | None = None,
         limit: int = 5,
+        extra_queries: list[str] | None = None,
     ) -> dict[str, Any]:
         chunks = self.retrieve(db, query=query, user_id=user_id, analysis_id=analysis_id, limit=limit)
+        
+        if extra_queries:
+            seen_ids = {chunk["chunkId"] for chunk in chunks}
+            for eq in extra_queries:
+                eq_chunks = self.retrieve(db, query=eq, user_id=user_id, analysis_id=analysis_id, limit=limit)
+                for chunk in eq_chunks:
+                    if chunk["chunkId"] not in seen_ids:
+                        chunks.append(chunk)
+                        seen_ids.add(chunk["chunkId"])
+            
+            chunks.sort(key=lambda item: item["score"], reverse=True)
+            chunks = chunks[:limit]
+
         context_lines: list[str] = []
         citations: list[dict[str, Any]] = []
         for index, chunk in enumerate(chunks, start=1):

@@ -185,42 +185,74 @@ export const DashboardView: React.FC = () => {
               </h4>
               <button
                 type="button"
-                onClick={() => void handleActionClick(0)}
-                className="text-xs font-bold text-brand-purple hover:underline"
+                onClick={() => void handleActionClick(7)}
+                className="text-xs font-bold text-brand-orange hover:underline flex items-center gap-1"
               >
-                Jump to plan
+                Open Planner →
               </button>
             </div>
 
-            <div className="space-y-3">
-              {planItems.map((item) => (
-                <div key={item.id} className="rounded-2xl border border-gray-100 p-4 bg-gray-50/70">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-sm font-black text-gray-800">{item.title}</div>
-                      <div className="text-xs text-gray-500 font-semibold mt-1">{item.description}</div>
+            {planItems.length > 0 ? (
+              <div className="space-y-3">
+                {planItems.slice(0, 4).map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-gray-100 p-4 bg-gray-50/70">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1 min-w-0">
+                        <div className={`text-sm font-black leading-snug ${item.progress === 100 ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                          {item.title}
+                        </div>
+                        <div className="text-xs text-gray-500 font-semibold mt-0.5 truncate">{item.description}</div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        {item.progress === 100 && (
+                          <span className="text-[10px] font-black bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full uppercase">Done ✓</span>
+                        )}
+                        <Badge
+                          variant={item.priority === 'high' ? 'orange' : item.priority === 'medium' ? 'default' : 'green'}
+                          className="shrink-0 text-[10px] font-black"
+                        >
+                          {item.priority}
+                        </Badge>
+                      </div>
                     </div>
-                    <Badge variant="default" className="shrink-0">
-                      {item.priority}
-                    </Badge>
+                    <div className="mt-3">
+                      <ProgressCard
+                        name={item.title}
+                        emoji={item.progress === 100 ? '✅' : '📘'}
+                        progress={item.progress}
+                        barColor={item.priority === 'high' ? 'orange' : item.priority === 'medium' ? 'purple' : 'green'}
+                      />
+                    </div>
                   </div>
-                  <div className="mt-3">
-                    <ProgressCard
-                      name={item.title}
-                      emoji="📘"
-                      progress={item.progress}
-                      barColor={item.priority === 'high' ? 'orange' : item.priority === 'medium' ? 'purple' : 'green'}
-                    />
+                ))}
+                {planItems.length > 4 && (
+                  <button
+                    type="button"
+                    onClick={() => void handleActionClick(7)}
+                    className="w-full text-xs font-bold text-brand-orange hover:underline text-center py-1"
+                  >
+                    + {planItems.length - 4} more tasks — View full plan →
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-center py-6 space-y-4">
+                <div className="text-4xl">🗓️</div>
+                <div className="space-y-1">
+                  <div className="text-sm font-black text-gray-700">No Study Plan Yet</div>
+                  <div className="text-xs text-gray-500 font-semibold leading-relaxed max-w-xs">
+                    Upload your syllabus or textbook and let Vidya AI build a personalized day-by-day study schedule.
                   </div>
                 </div>
-              ))}
-
-              {planItems.length === 0 && (
-                <div className="text-sm text-gray-500 font-semibold">
-                  Your plan will appear here once the backend sends the latest recommendations.
-                </div>
-              )}
-            </div>
+                <button
+                  type="button"
+                  onClick={() => void handleActionClick(7)}
+                  className="text-xs font-black text-white bg-brand-orange hover:bg-brand-orangeDark px-5 py-2.5 rounded-xl transition-all shadow-sm active:scale-95"
+                >
+                  Create My Study Plan ✨
+                </button>
+              </div>
+            )}
           </div>
 
         </div>

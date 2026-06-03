@@ -16,12 +16,14 @@ import {
   chatDoubt,
   type ExplanationChatMessage,
 } from '../../services/api';
+import AIResponseRenderer from '../../components/common/AIResponseRenderer';
 
 interface ChatMessage {
   id: string;
   role: 'user' | 'assistant';
   content: string;
   timestamp: number;
+  streamed?: boolean;
 }
 
 interface ChatThread {
@@ -38,7 +40,6 @@ const createId = (prefix: string) => {
 
 export const TutorView: React.FC = () => {
   const language = useAppSelector((state) => state.app.language);
-  const user = useAppSelector((state) => state.app.user);
 
   // Chat State
   const [threads, setThreads] = useState<ChatThread[]>([]);
@@ -184,6 +185,7 @@ export const TutorView: React.FC = () => {
         role: 'assistant',
         content: response.reply,
         timestamp: Date.now(),
+        streamed: false,
       };
 
       setThreads((current) =>
@@ -206,6 +208,7 @@ export const TutorView: React.FC = () => {
         role: 'assistant',
         content: 'Oops! I encountered an error answering your question. Please verify your connection and try again.',
         timestamp: Date.now(),
+        streamed: false,
       };
       setThreads((current) =>
         current.map((t) =>
@@ -238,8 +241,8 @@ export const TutorView: React.FC = () => {
       case 'General Knowledge':
         void handleSendMessage('Tell me a fun General Knowledge fact.');
         break;
-      case 'Social':
-        void handleSendMessage('Tell me an interesting topic in Social Studies.');
+      case 'History':
+        void handleSendMessage('Tell me an interesting event from History.');
         break;
       case 'Geography':
         void handleSendMessage('What is an amazing fact about Geography?');
@@ -255,7 +258,7 @@ export const TutorView: React.FC = () => {
     'Mathematics',
     'English',
     'General Knowledge',
-    'Social',
+    'History',
     'Geography',
   ];
 
@@ -363,13 +366,34 @@ export const TutorView: React.FC = () => {
 
                 <div className="flex flex-col max-w-[80%]">
                   <div
-                    className={`rounded-2xl px-4 py-3 text-sm font-semibold leading-relaxed whitespace-pre-line ${
+                    className={`rounded-2xl px-4 py-3 text-sm font-semibold leading-relaxed ${
                       isUser
-                        ? 'bg-brand-purple text-white shadow-sm rounded-tr-none'
+                        ? 'bg-brand-purple text-white shadow-sm rounded-tr-none whitespace-pre-line'
                         : 'bg-white text-gray-800 border border-gray-100 shadow-sm rounded-tl-none'
                     }`}
                   >
-                    {message.content}
+                    {isUser ? (
+                      message.content
+                    ) : (
+                      <AIResponseRenderer
+                        content={message.content}
+                        stream={message.streamed === false}
+                        onStreamComplete={() => {
+                          setThreads((current) =>
+                            current.map((t) =>
+                              t.id === activeThreadId
+                                ? {
+                                    ...t,
+                                    messages: t.messages.map((m) =>
+                                      m.id === message.id ? { ...m, streamed: true } : m
+                                    ),
+                                  }
+                                : t
+                            )
+                          );
+                        }}
+                      />
+                    )}
                   </div>
 
                   {/* Quick Action prompts below AI Responses */}
@@ -415,10 +439,10 @@ export const TutorView: React.FC = () => {
         {isSending && (
           <div className="flex items-start gap-3">
             <div className="w-8 h-8 rounded-xl bg-brand-purple text-white flex items-center justify-center shrink-0 shadow-sm">
-              <Loader2 size={16} className="animate-spin" />
+              <Bot size={16} />
             </div>
-            <div className="bg-white border border-gray-100 shadow-sm rounded-2xl rounded-tl-none px-4 py-3.5 text-sm text-gray-500 font-semibold flex items-center gap-2">
-              <span>Vidya AI is writing an explanation...</span>
+            <div className="flex flex-col">
+              <AIResponseRenderer content="" loading={true} />
             </div>
           </div>
         )}

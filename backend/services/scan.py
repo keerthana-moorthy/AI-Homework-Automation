@@ -165,6 +165,13 @@ def _call_llm_for_scan(
                 "You are a homework OCR and tutoring assistant. "
                 "Analyze the scanned homework carefully and return valid JSON only. "
                 "The JSON must include questionText, extractedText, detectedSubject, problemType, summary, detailedExplanation, steps, confidence, needsManualReview, and recommendations. "
+                "For extractedText, instead of raw OCR text, generate a structured analysis in Markdown format using exactly the following headings:\n"
+                "# Summary\n"
+                "## Main Topic\n"
+                "## Key Points\n"
+                "## Important Concepts\n"
+                "## Detailed Analysis\n"
+                "## Final Takeaways\n"
                 "Use simple English suitable for a class 8 student. "
                 "Explain the concept or topic behind the question, not just the OCR text. "
                 "If the page has multiple questions, choose the primary one and mention the others in the summary. "
@@ -303,7 +310,12 @@ def scan_homework_document(
             "pageCount": pdf_context.get("pageCount", 0),
             "pageTexts": pdf_context.get("pageTexts", []),
             "pageImages": pdf_context.get("pageImages", []),
-            "extractedText": extracted_text or question_text,
+            "extractedText": str(
+                groq_result.get("extractedText")
+                or groq_result.get("extracted_text")
+                or extracted_text
+                or question_text
+            ),
             "questionText": question_text or extracted_text,
             "detailedExplanation": str(
                 groq_result.get("detailedExplanation")

@@ -3,6 +3,7 @@ import { useAppDispatch } from '../../store';
 import { setActiveScreen, setUser } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
+import AIResponseRenderer from '../../components/common/AIResponseRenderer';
 import ProgressBar from '../../components/common/ProgressBar';
 import {
   answerQuiz,
@@ -101,7 +102,7 @@ export const QuizView: React.FC = () => {
             selectedOption: option,
             correctOption: response.result.correctOption,
             isCorrect: response.result.correct,
-            explanation: response.result.explanation || '',
+            explanation: response.result.toastMessage || '',
           };
           const updatedAnswers = [...userAnswers, newAnswer];
           setUserAnswers(updatedAnswers);
@@ -194,7 +195,6 @@ export const QuizView: React.FC = () => {
   const correctAnswers = userAnswers.filter((ans) => ans.isCorrect).length;
   const incorrectAnswers = totalQuestions - correctAnswers;
   const accuracyPercentage = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
-  const xpEarned = correctAnswers * 10;
 
   const getPerformanceSummary = (accuracy: number) => {
     if (accuracy >= 90) {
@@ -340,10 +340,10 @@ export const QuizView: React.FC = () => {
 
                   {ans.explanation && (
                     <div className="bg-brand-purpleLight/20 text-gray-700 p-4 rounded-xl text-xs space-y-1.5 border border-brand-purpleBorder/30">
-                      <div className="font-black text-brand-purple text-[10px] uppercase tracking-wider flex items-center gap-1">
+                      <div className="font-black text-brand-purple text-[10px] uppercase tracking-wider flex items-center gap-1 mb-1">
                         <span>💡</span> AI Explanation
                       </div>
-                      <p className="font-semibold leading-relaxed whitespace-pre-line text-gray-600">{ans.explanation}</p>
+                      <AIResponseRenderer content={ans.explanation} />
                     </div>
                   )}
                 </div>
@@ -483,17 +483,20 @@ export const QuizView: React.FC = () => {
 
           {quizMode === 'practice' && quizData.toastMessage && (
             <div className={`
-              p-4 rounded-2xl flex items-center gap-3 animate-[slideUp_0.2s_ease-out]
+              p-4 rounded-2xl flex items-center gap-3 animate-[slideUp_0.2s_ease-out] w-full
               ${quizData.status === 'correct' 
                 ? 'bg-brand-orange text-white shadow-sm' 
                 : 'bg-blue-50 text-brand-blue border border-brand-blueBorder'
               }
             `}>
-              <div className="text-2xl select-none">
+              <div className="text-2xl select-none shrink-0">
                 {quizData.status === 'correct' ? '⭐' : '💡'}
               </div>
-              <div className="text-xs md:text-sm font-black leading-tight">
-                {quizData.toastMessage}
+              <div className="text-xs md:text-sm font-black leading-tight flex-1">
+                <AIResponseRenderer 
+                  content={quizData.toastMessage} 
+                  className={quizData.status === 'correct' ? 'text-white font-black' : 'text-brand-blue font-black'} 
+                />
               </div>
             </div>
           )}

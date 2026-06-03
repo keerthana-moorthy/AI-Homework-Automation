@@ -4,6 +4,7 @@ import { setActiveScreen } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import StepCard from '../../components/common/StepCard';
+import AIResponseRenderer from '../../components/common/AIResponseRenderer';
 import {
   getQuiz,
   getExplanation,
@@ -108,7 +109,7 @@ export const ExplanationView: React.FC = () => {
     chatSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  const subjectVariant = getSubjectVariant(explanation?.subject?.id);
+  const subjectVariant = getSubjectVariant(explanation?.subject?.id as string);
   const steps = explanation?.steps?.length ? explanation.steps : [];
   const scanLabel = getScanLabel(explanation?.scanMethod, explanation?.sourceType);
   const fileUrl = resolveBackendUrl(explanation?.fileUrl);
@@ -120,7 +121,7 @@ export const ExplanationView: React.FC = () => {
           <Button variant="back" onClick={() => void handleNavigate(2)} />
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <Badge variant={subjectVariant as any}>{explanation?.subject?.name ?? 'Homework'}</Badge>
+              <Badge variant={subjectVariant as any}>{(explanation?.subject?.name as string) ?? 'Homework'}</Badge>
               <Badge variant="white">{scanLabel}</Badge>
               {explanation?.pageCount ? <Badge variant="white">{explanation.pageCount} page(s)</Badge> : null}
             </div>
@@ -144,9 +145,9 @@ export const ExplanationView: React.FC = () => {
             {explanation?.extractedText ? (
               <div className="mt-4 bg-white/80 rounded-xl p-4 border border-white/70">
                 <div className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Extracted text</div>
-                <p className="text-sm text-gray-700 font-semibold leading-6 whitespace-pre-line">
-                  {explanation.extractedText}
-                </p>
+                <div className="text-sm font-semibold leading-6 text-gray-700">
+                  <AIResponseRenderer content={explanation.extractedText} />
+                </div>
               </div>
             ) : null}
           </div>
@@ -199,7 +200,7 @@ export const ExplanationView: React.FC = () => {
           {explanation?.summary ? (
             <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm space-y-2">
               <h4 className="text-sm font-black text-gray-800">Scan Summary</h4>
-              <p className="text-sm text-gray-600 font-semibold leading-6 whitespace-pre-line">{explanation.summary}</p>
+              <AIResponseRenderer content={explanation.summary} />
             </div>
           ) : null}
         </div>
@@ -231,9 +232,7 @@ export const ExplanationView: React.FC = () => {
           {explanation?.detailedExplanation ? (
             <div className="bg-white rounded-2xl p-5 border border-gray-100 shadow-sm space-y-2">
               <h4 className="text-sm font-black text-gray-800">Detailed Explanation</h4>
-              <p className="text-sm text-gray-600 font-semibold leading-7 whitespace-pre-line">
-                {explanation.detailedExplanation}
-              </p>
+              <AIResponseRenderer content={explanation.detailedExplanation} />
             </div>
           ) : null}
 

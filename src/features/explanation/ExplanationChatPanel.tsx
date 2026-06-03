@@ -4,11 +4,13 @@ import Badge from '../../components/common/Badge';
 import Button from '../../components/common/Button';
 import { useAppSelector } from '../../store';
 import { chatExplanation, type ExplanationChatMessage, type ExplanationPayload } from '../../services/api';
+import AIResponseRenderer from '../../components/common/AIResponseRenderer';
 
 interface ChatEntry {
   id: string;
   role: 'assistant' | 'user';
   content: string;
+  streamed?: boolean;
 }
 
 interface ExplanationChatPanelProps {
@@ -142,6 +144,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
       id: createId('assistant'),
       role: 'assistant',
       content: buildGreeting(explanation),
+      streamed: true,
     };
     setHydratedKey(null);
 
@@ -169,6 +172,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
                 && typeof (item as ChatEntry).content === 'string'
               );
             })
+            .map((item) => ({ ...item, streamed: true }))
             .slice(-20);
 
           if (validMessages.length > 0) {
@@ -209,6 +213,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
       id: createId('assistant'),
       role: 'assistant',
       content: buildGreeting(explanation),
+      streamed: true,
     };
     setMessages([starterMessage]);
     setInput('');
@@ -249,6 +254,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
         id: createId('assistant'),
         role: 'assistant',
         content: response.reply,
+        streamed: false,
       };
 
       setMessages((current) => [...current, assistantMessage]);
@@ -264,6 +270,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
           id: createId('assistant'),
           role: 'assistant',
           content: fallbackReply,
+          streamed: false,
         },
       ]);
     } finally {
@@ -324,13 +331,27 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
                   </div>
                 ) : null}
 
-                <div
-                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-6 whitespace-pre-line ${isUser
-                      ? 'bg-brand-purple text-white shadow-sm'
+                 <div
+                  className={`max-w-[85%] rounded-2xl px-4 py-3 text-sm font-semibold leading-6 ${isUser
+                      ? 'bg-brand-purple text-white shadow-sm whitespace-pre-line'
                       : 'bg-gray-50 text-gray-700 border border-gray-100'
                     }`}
                 >
-                  {message.content}
+                  {isUser ? (
+                    message.content
+                  ) : (
+                    <AIResponseRenderer
+                      content={message.content}
+                      stream={message.streamed === false}
+                      onStreamComplete={() => {
+                        setMessages((current) =>
+                          current.map((m) =>
+                            m.id === message.id ? { ...m, streamed: true } : m
+                          )
+                        );
+                      }}
+                    />
+                  )}
                 </div>
 
                 {isUser ? (
@@ -345,10 +366,10 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
           {isSending ? (
             <div className="flex items-start gap-2.5">
               <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-purple text-white">
-                <Loader2 size={15} className="animate-spin" />
+                <Bot size={15} />
               </div>
-              <div className="rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3 text-sm font-semibold text-gray-500">
-                Vidya AI is thinking about the scanned homework...
+              <div className="flex flex-col">
+                <AIResponseRenderer content="" loading={true} />
               </div>
             </div>
           ) : null}

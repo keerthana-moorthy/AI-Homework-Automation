@@ -376,3 +376,52 @@ class RecommendationRequest(CamelModel):
     subject_id: str | None = None
     goal: str | None = None
     limit: int = 5
+
+
+class StudyPlanGenerateRequest(CamelModel):
+    start_date: str
+    end_date: str
+    file_name: str | None = None
+    file_type: str | None = None
+    file_data_base64: str | None = None
+    pasted_text: str | None = None
+
+
+class StudyPlanDayTask(CamelModel):
+    title: str
+    completed: bool = False
+
+
+class StudyPlanDay(CamelModel):
+    day_num: int
+    date: str
+    topic: str
+    description: str
+    difficulty: str = "medium"
+    estimated_hours: int = 2
+    tasks: list[StudyPlanDayTask] = Field(default_factory=list)
+
+
+class StudyPlanOut(CamelModel):
+    id: int
+    start_date: str
+    end_date: str
+    file_name: str | None = None
+    file_url: str | None = None
+    num_days: int
+    plan_data: list[StudyPlanDay] = Field(default_factory=list)
+    progress: float
+    extracted_topics: dict[str, Any] | None = None
+    num_pages: int = 1
+    estimated_hours: int = 10
+    summary: str | None = None
+    raw_text: str | None = None
+    created_at: datetime
+
+
+class StudyPlanTaskToggleRequest(CamelModel):
+    day_num: int
+    task_index: int
+    completed: bool
+
+

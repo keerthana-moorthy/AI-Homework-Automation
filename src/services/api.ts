@@ -1,4 +1,4 @@
-import type { ActionCard, HWStep, OnboardingFeature, ParentStat, QuizQuestion, Recommendation, Subject, UserState } from '../types/types';
+import type { ActionCard, HWStep, OnboardingFeature, ParentStat, QuizQuestion, Recommendation, StudyPlan, Subject, UserState } from '../types/types';
 
 const runtimeApiBase =
   typeof window !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
@@ -325,3 +325,27 @@ export const upgradeSubscription = (planName: string) =>
     body: JSON.stringify({ planName }),
   });
 export const cancelSubscription = () => request<JsonRecord>('/api/subscription/cancel', { method: 'POST' });
+
+export interface StudyPlanGeneratePayload {
+  startDate: string;
+  endDate: string;
+  fileName?: string;
+  fileType?: string;
+  fileDataBase64?: string;
+  pastedText?: string;
+}
+
+export const getLatestStudyPlan = () => request<StudyPlan | null>('/api/studyplan/latest');
+
+export const generateStudyPlan = (payload: StudyPlanGeneratePayload) =>
+  request<StudyPlan>('/api/studyplan/generate', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+
+export const toggleStudyPlanTask = (planId: number, dayNum: number, taskIndex: number, completed: boolean) =>
+  request<StudyPlan>(`/api/studyplan/${planId}/toggle`, {
+    method: 'POST',
+    body: JSON.stringify({ dayNum, taskIndex, completed }),
+  });
+

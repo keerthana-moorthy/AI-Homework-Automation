@@ -71,3 +71,36 @@ export interface UserState {
   quizStatus?: string;
   subscriptionPlan?: string;
 }
+
+export interface StudyPlanDayTask {
+  title: string;
+  completed: boolean;
+}
+
+export interface StudyPlanDay {
+  dayNum: number;
+  date: string;
+  topic: string;
+  description: string;
+  difficulty: string;
+  estimatedHours: number;
+  tasks: StudyPlanDayTask[];
+}
+
+export interface StudyPlan {
+  id: number;
+  startDate: string;
+  endDate: string;
+  fileName: string | null;
+  fileUrl: string | null;
+  numDays: number;
+  planData: StudyPlanDay[];
+  progress: number;
+  extractedTopics?: { topics: Array<{ title: string; subtopics: string[] }> } | null;
+  numPages: number;
+  estimatedHours: number;
+  summary: string | null;
+  rawText: string | null;
+  createdAt: string;
+}
+

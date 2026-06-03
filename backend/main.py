@@ -4,6 +4,7 @@ import asyncio
 import base64
 import re
 from pathlib import Path
+from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -28,7 +29,7 @@ from .constants import (
 )
 from .services.llm_router import get_llm_router
 from .database import Base, SessionLocal, engine, get_db
-from .models import AdaptiveQuizSession, HomeworkAnalysis, QuizAttempt, QuizQuestion, Subject, Subscription, UserProfile
+from .models import AdaptiveQuizSession, HomeworkAnalysis, QuizAttempt, QuizQuestion, StudyPlan, Subject, Subscription, UserProfile
 from .schemas import (
     AnalyticsSummaryOut,
     AppInfo,
@@ -54,6 +55,9 @@ from .schemas import (
     ScreenUpdateRequest,
     SessionOut,
     SessionUpdateRequest,
+    StudyPlanGenerateRequest,
+    StudyPlanOut,
+    StudyPlanTaskToggleRequest,
     SubjectOut,
     SubscriptionOut,
     SubscriptionUpdateRequest,
@@ -91,6 +95,12 @@ manager = ConnectionManager()
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE study_plans ADD COLUMN extracted_topics JSON"))
+    except Exception:
+        pass
     with SessionLocal() as db:
         seed_database(db)
 
@@ -350,7 +360,7 @@ def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
     subjects = get_subjects(db)
     selected_subject = get_selected_subject(db, user)
     analysis_payload = latest_analysis_payload(db, user)
-    study_plan = build_daily_plan(user, user.selected_subject_id, analysis_payload)
+    study_plan = build_daily_plan(db, user, user.selected_subject_id, analysis_payload)
     recommendations = (
         analysis_payload.get("recommendations")
         if analysis_payload and analysis_payload.get("recommendations")
@@ -739,7 +749,7 @@ def subject_detail(subject_id: str, db: Session = Depends(get_db)) -> dict[str, 
         "ok": True,
         "subject": serialize_subject(subject),
         "relatedAnalysisCount": analysis_count,
-        "plan": build_daily_plan(user, subject.id, latest_analysis_payload(db, user)),
+        "plan": build_daily_plan(db, user, subject.id, latest_analysis_payload(db, user)),
     }
 
 
@@ -1170,7 +1180,7 @@ def planner_today(db: Session = Depends(get_db)) -> dict[str, Any]:
     selected_subject = get_selected_subject(db, user)
     return {
         "ok": True,
-        "plan": build_daily_plan(user, selected_subject.id if selected_subject else user.selected_subject_id, latest_analysis_payload(db, user)),
+        "plan": build_daily_plan(db, user, selected_subject.id if selected_subject else user.selected_subject_id, latest_analysis_payload(db, user)),
         "insights": build_insights(user),
     }
 
@@ -1278,6 +1288,662 @@ async def websocket_updates(websocket: WebSocket) -> None:
                 await websocket.send_json({"type": "echo", "timestamp": now_iso(), "message": data})
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+@app.get("/api/studyplan/latest", response_model=StudyPlanOut | None)
+def get_latest_study_plan(db: Session = Depends(get_db)) -> Any:
+    user = get_primary_user(db)
+    row = db.scalar(
+        select(StudyPlan)
+        .where(StudyPlan.user_id == user.id)
+        .order_by(desc(StudyPlan.created_at), desc(StudyPlan.id))
+    )
+    if row is None:
+        return None
+
+    file_url = f"/uploads/{row.file_path}" if row.file_path else None
+    return StudyPlanOut(
+        id=row.id,
+        start_date=row.start_date,
+        end_date=row.end_date,
+        file_name=row.file_name,
+        file_url=file_url,
+        num_days=row.num_days,
+        plan_data=row.plan_data,
+        progress=row.progress,
+        extracted_topics=row.extracted_topics,
+        num_pages=row.num_pages if hasattr(row, "num_pages") else 1,
+        estimated_hours=row.estimated_hours if hasattr(row, "estimated_hours") else 10,
+        summary=row.summary if hasattr(row, "summary") else None,
+        raw_text=row.raw_text if hasattr(row, "raw_text") else None,
+        created_at=row.created_at,
+    )
+
+
+def extract_structured_topics(text: str) -> dict[str, Any]:
+    # Normalize lines
+    lines = [line.strip() for line in text.split("\n")]
+    lines = [l for l in lines if l]
+    
+    topics = []
+    current_topic = None
+    
+    # Heading patterns:
+    # Chapter 1, Unit 2, Part I, Module A, Section 3
+    chapter_re = re.compile(r"^(?:chapter|unit|section|topic|part|module|heading)\s+(\d+|[ivxldcmivxldcm]+|[a-z])[\s.:-]*", re.IGNORECASE)
+    # Numbered heading: 1. Neural Networks, 2.3 Backpropagation
+    number_heading_re = re.compile(r"^(?:\d+\.|\d+\.\d+|[IVXLCDM]+\.)\s+([A-Z].*)")
+    # Colon heading: "Neural Networks:"
+    colon_heading_re = re.compile(r"^([A-Z][A-Za-z0-9\s,\-\'\"]{2,50}):$")
+    
+    for line in lines:
+        is_heading = False
+        title = ""
+        
+        m_chap = chapter_re.match(line)
+        m_num = number_heading_re.match(line)
+        m_col = colon_heading_re.match(line)
+        
+        if m_chap:
+            is_heading = True
+            title = line
+        elif m_num:
+            is_heading = True
+            title = line
+        elif m_col:
+            is_heading = True
+            title = m_col.group(1)
+        elif line.isupper() and 3 < len(line) < 55:
+            is_heading = True
+            title = line
+            
+        if is_heading:
+            if current_topic:
+                current_topic["subtopics"] = list(dict.fromkeys(current_topic["subtopics"]))
+                topics.append(current_topic)
+            current_topic = {
+                "title": title,
+                "subtopics": []
+            }
+        else:
+            if current_topic is not None:
+                clean = re.sub(r"^[\-\*\•o\s\d\.\)]+\s*", "", line)
+                if "," in clean and len(clean) < 100 and not clean.endswith("."):
+                    parts = [p.strip() for p in clean.split(",") if p.strip()]
+                    if all(len(p) < 40 for p in parts):
+                        current_topic["subtopics"].extend(parts)
+                    else:
+                        current_topic["subtopics"].append(clean)
+                else:
+                    if clean and len(clean) > 2 and len(clean) < 100:
+                        current_topic["subtopics"].append(clean)
+            else:
+                # If we haven't found a heading yet, treat short text as a new topic
+                if len(line) < 55 and not line.endswith("."):
+                    current_topic = {
+                        "title": line,
+                        "subtopics": []
+                    }
+                    
+    if current_topic:
+        current_topic["subtopics"] = list(dict.fromkeys(current_topic["subtopics"]))
+        topics.append(current_topic)
+        
+    # Fallback if no topics found
+    if not topics:
+        for i in range(0, len(lines), 5):
+            chunk = lines[i:i+5]
+            if chunk:
+                title = chunk[0]
+                if len(title) > 80:
+                    title = title[:77] + "..."
+                subtopics = []
+                for l in chunk[1:]:
+                    clean = re.sub(r"^[\-\*\•o\s\d\.\)]+\s*", "", l)
+                    if clean and len(clean) > 2 and len(clean) < 100:
+                        subtopics.append(clean)
+                topics.append({
+                    "title": title,
+                    "subtopics": subtopics or ["Study concepts in detail"]
+                })
+                
+    if not topics:
+        topics = [
+            {
+                "title": "General Introduction",
+                "subtopics": ["Overview of Course Material", "Key Definitions", "Basic Scope"]
+            }
+        ]
+        
+    return {"topics": topics}
+
+
+def generate_schedule_from_topics(topics_dict: dict[str, Any], start_date_str: str, end_date_str: str) -> list[dict[str, Any]]:
+    try:
+        start_date = datetime.strptime(start_date_str, "%Y-%m-%d")
+        end_date = datetime.strptime(end_date_str, "%Y-%m-%d")
+        num_days = max(1, (end_date - start_date).days + 1)
+    except Exception:
+        start_date = datetime.utcnow()
+        num_days = 7
+        
+    topics = topics_dict.get("topics") or []
+    
+    # Calculate revision days
+    if num_days >= 6:
+        final_revision_days = 2
+    elif num_days >= 3:
+        final_revision_days = 1
+    else:
+        final_revision_days = 0
+        
+    study_days_count = num_days - final_revision_days
+    
+    # Classify each day index (1-based) as "study", "milestone_revision", or "final_revision"
+    day_types = []
+    for day_idx in range(1, num_days + 1):
+        if day_idx > study_days_count:
+            day_types.append((day_idx, "final_revision"))
+        elif day_idx > 1 and day_idx % 4 == 0:
+            day_types.append((day_idx, "milestone_revision"))
+        else:
+            day_types.append((day_idx, "study"))
+            
+    study_days = [d for d, t in day_types if t == "study"]
+    S = len(study_days)
+    
+    plan = []
+    
+    # Helper to calculate difficulty and weight
+    def get_difficulty_and_weight(title: str) -> tuple[str, int]:
+        lower = title.lower()
+        if any(w in lower for w in ["advanced", "complex", "quantum", "difficult", "theory", "proof", "derivation", "integration", "analysis"]):
+            return "hard", 3
+        elif any(w in lower for w in ["intro", "basic", "overview", "history", "fundamental", "introduction"]):
+            return "easy", 1
+        return "medium", 2
+        
+    # Helper to generate context-specific tasks for a list of subtopics/terms
+    def generate_tasks_for_subtopics(subtopics: list[str], topic_title: str) -> list[dict[str, Any]]:
+        tasks = []
+        if not subtopics:
+            tasks.append({"title": f"Study the primary concepts of {topic_title}", "completed": False})
+            tasks.append({"title": f"Take detailed notes and highlight key definitions", "completed": False})
+            return tasks
+            
+        for sub in subtopics[:4]:  # Limit to 4 tasks per day
+            tasks.append({"title": f"Master the core principles and concepts of {sub}", "completed": False})
+            tasks.append({"title": f"Analyze examples, applications, or problems on {sub}", "completed": False})
+            
+        # Ensure we have at least 2 tasks
+        if len(tasks) < 2:
+            tasks.append({"title": f"Complete self-assessment questions for {topic_title}", "completed": False})
+            
+        return tasks
+        
+    T = len(topics)
+    daily_schedule = {}
+    
+    if T >= S:
+        # Group topics: partition the T topics into S groups
+        import math
+        group_size = math.ceil(T / S) if S > 0 else T
+        
+        for s_idx, d_num in enumerate(study_days):
+            start_t = s_idx * group_size
+            end_t = min(T, start_t + group_size)
+            
+            if start_t >= T:
+                day_topics = [topics[s_idx % T]]
+            else:
+                day_topics = topics[start_t:end_t]
+                
+            titles = [t["title"] for t in day_topics]
+            day_title = " & ".join(titles)
+            if len(day_title) > 80:
+                day_title = day_title[:77] + "..."
+                
+            subtopics = []
+            for t in day_topics:
+                subtopics.extend(t.get("subtopics") or [])
+            subtopics = list(dict.fromkeys(subtopics))
+            
+            difficulty, weight = get_difficulty_and_weight(day_topics[0]["title"])
+            
+            description = f"Focus session on {', '.join(titles)}. Study difficulty is {difficulty}."
+            tasks = generate_tasks_for_subtopics(subtopics, day_title)
+            
+            daily_schedule[d_num] = {
+                "topic": day_title,
+                "description": description,
+                "estimatedHours": weight,
+                "difficulty": difficulty,
+                "tasks": tasks
+            }
+    else:
+        # Fewer topics than study days (T < S)
+        # Allocate study days to each topic based on weights
+        allocations = {i: 1 for i in range(T)}
+        remaining_days = S - T
+        
+        weights = [get_difficulty_and_weight(t["title"])[1] for t in topics]
+        
+        for _ in range(remaining_days):
+            best_idx = 0
+            best_val = -1.0
+            for i in range(T):
+                val = weights[i] / (allocations[i] + 1)
+                if val > best_val:
+                    best_val = val
+                    best_idx = i
+            allocations[best_idx] += 1
+            
+        day_pointer = 0
+        
+        for i, t in enumerate(topics):
+            num_allocated_days = allocations[i]
+            subtopics = t.get("subtopics") or []
+            
+            m = len(subtopics)
+            import math
+            sub_group_size = math.ceil(m / num_allocated_days) if num_allocated_days > 0 else m
+            
+            difficulty, weight = get_difficulty_and_weight(t["title"])
+            
+            for d_idx in range(num_allocated_days):
+                if day_pointer >= len(study_days):
+                    break
+                d_num = study_days[day_pointer]
+                day_pointer += 1
+                
+                start_s = d_idx * sub_group_size
+                end_s = min(m, start_s + sub_group_size)
+                
+                day_subs = subtopics[start_s:end_s] if start_s < m else []
+                
+                if day_subs:
+                    day_title = f"{t['title']} - {', '.join(day_subs[:2])}"
+                else:
+                    day_title = f"{t['title']} (Part {d_idx + 1})"
+                    
+                if len(day_title) > 80:
+                    day_title = day_title[:77] + "..."
+                    
+                description = f"Proportional study session for {t['title']}. Focus on sub-areas: {', '.join(day_subs) if day_subs else 'general concepts'}."
+                tasks = generate_tasks_for_subtopics(day_subs, t["title"])
+                
+                daily_schedule[d_num] = {
+                    "topic": day_title,
+                    "description": description,
+                    "estimatedHours": weight,
+                    "difficulty": difficulty,
+                    "tasks": tasks
+                }
+                
+    covered_history = []
+    
+    for d_num, day_type in day_types:
+        current_date_str = (start_date + timedelta(days=d_num-1)).strftime("%Y-%m-%d")
+        
+        if day_type == "study":
+            sched = daily_schedule.get(d_num)
+            if not sched:
+                sched = {
+                    "topic": "General Study Topic",
+                    "description": "Read syllabus material.",
+                    "estimatedHours": 2,
+                    "difficulty": "medium",
+                    "tasks": [{"title": "Read textbook chapters", "completed": False}]
+                }
+            plan.append({
+                "dayNum": d_num,
+                "date": current_date_str,
+                "topic": sched["topic"],
+                "description": sched["description"],
+                "estimatedHours": sched["estimatedHours"],
+                "difficulty": sched["difficulty"],
+                "tasks": sched["tasks"]
+            })
+            covered_history.append(sched["topic"])
+            
+        elif day_type == "milestone_revision":
+            topics_to_revise = covered_history[-3:]
+            tasks = []
+            for topic_name in topics_to_revise:
+                tasks.append({"title": f"Revise key terms and subtopics from: {topic_name}", "completed": False})
+                tasks.append({"title": f"Re-read notes and review equations for: {topic_name}", "completed": False})
+            if not tasks:
+                tasks.append({"title": "Revise previously studied material", "completed": False})
+            tasks.append({"title": "Solve practice questions on recent topics", "completed": False})
+            
+            plan.append({
+                "dayNum": d_num,
+                "date": current_date_str,
+                "topic": "Milestone Revision & Review",
+                "description": f"Intermediate review of topics: {', '.join(topics_to_revise) if topics_to_revise else 'recent chapters'}.",
+                "estimatedHours": 1,
+                "difficulty": "medium",
+                "tasks": tasks
+            })
+            
+        elif day_type == "final_revision":
+            tasks = []
+            if covered_history:
+                tasks.append({"title": f"Review all core topics: {', '.join(covered_history[:4])}", "completed": False})
+                if len(covered_history) > 4:
+                    tasks.append({"title": f"Review advanced sections: {', '.join(covered_history[4:8])}", "completed": False})
+            else:
+                tasks.append({"title": "Review all chapters and syllabus content", "completed": False})
+            tasks.append({"title": "Practice a complete self-assessment mock test", "completed": False})
+            
+            plan.append({
+                "dayNum": d_num,
+                "date": current_date_str,
+                "topic": "Overall Final Revision",
+                "description": "Consolidate all study materials, review notes, and prepare for exams.",
+                "estimatedHours": 2,
+                "difficulty": "medium",
+                "tasks": tasks
+            })
+            
+    return plan
+
+
+def generate_concise_summary(text: str, subject_name: str, num_pages: int, topics_count: int, estimated_hours: int) -> str:
+    router = get_llm_router()
+    if router.configured:
+        system_prompt = (
+            "You are Vidya AI, an expert educational planner. Write a concise, 2-3 sentence educational summary of "
+            "the provided syllabus or textbook content. Highlight the main subject area and key target topics."
+        )
+        user_prompt = f"Subject: {subject_name}\nPages: {num_pages}\nContent preview:\n{text[:3000]}"
+        try:
+            summary = router.generate_text(
+                task="chat",
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                temperature=0.3,
+                max_completion_tokens=200,
+            )
+            if summary:
+                return summary.strip()
+        except Exception:
+            pass
+
+    return (
+        f"This document is a comprehensive educational resource for {subject_name or 'the curriculum'}. "
+        f"It spans {num_pages} pages and contains {topics_count} core learning topics. "
+        "The structured study plan covers all key learning units, deep dives into subtopics, "
+        f"and revision cycles across {estimated_hours} total study hours."
+    )
+
+
+@app.post("/api/studyplan/generate", response_model=StudyPlanOut)
+async def generate_study_plan(payload: StudyPlanGenerateRequest, db: Session = Depends(get_db)) -> Any:
+    user = get_primary_user(db)
+
+    try:
+        start = datetime.strptime(payload.start_date, "%Y-%m-%d")
+        end = datetime.strptime(payload.end_date, "%Y-%m-%d")
+        num_days = max(1, (end - start).days + 1)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid date format: {exc}")
+
+    saved_name = None
+    file_url = None
+    extracted_text = ""
+    num_pages = 1
+
+    if payload.pasted_text:
+        extracted_text = payload.pasted_text
+        payload.file_name = payload.file_name or "Pasted Text"
+    elif payload.file_data_base64:
+        saved_name, file_url, raw_bytes = save_uploaded_file(
+            payload.file_name,
+            payload.file_type,
+            payload.file_data_base64,
+        )
+        if raw_bytes:
+            file_name_lower = (payload.file_name or "").lower()
+            file_type_lower = (payload.file_type or "").lower()
+
+            if file_name_lower.endswith(".pdf") or file_type_lower == "application/pdf":
+                try:
+                    import fitz
+                    doc = fitz.open(stream=raw_bytes, filetype="pdf")
+                    num_pages = doc.page_count
+                    pdf_texts = []
+                    for page in doc:
+                        t = page.get_text("text")
+                        if t:
+                            pdf_texts.append(t)
+                    extracted_text = "\n".join(pdf_texts)
+                except Exception as e:
+                    print("Direct PDF text extraction failed:", e)
+
+            if not extracted_text and (file_type_lower == "text/plain" or file_name_lower.endswith(".txt") or file_name_lower.endswith(".csv") or file_name_lower.endswith(".md")):
+                try:
+                    extracted_text = raw_bytes.decode("utf-8", errors="ignore")
+                except Exception:
+                    extracted_text = ""
+
+            if not extracted_text:
+                from .services.document_router import route_document
+                from .services.ocr_service import extract_document_ocr
+
+                route_decision = route_document(
+                    file_name=payload.file_name,
+                    file_type=payload.file_type,
+                    file_bytes=raw_bytes,
+                )
+                ocr_result = extract_document_ocr(
+                    route_decision=route_decision,
+                    file_bytes=raw_bytes,
+                    file_name=payload.file_name,
+                    file_type=payload.file_type,
+                    language_hint="en",
+                )
+                extracted_text = ocr_result.get("raw_text") or ""
+
+    if not extracted_text:
+        extracted_text = "No content was extracted. Please structure a general study guide for school curriculum."
+
+    # Page count fallback calculation for text syllabus or pasted contents
+    file_name_clean = (payload.file_name or "").lower()
+    is_pdf = file_name_clean.endswith(".pdf") or (payload.file_type or "").lower() == "application/pdf"
+    if not is_pdf:
+        num_pages = max(1, len(extracted_text) // 3000 + (1 if len(extracted_text) % 3000 > 0 else 0))
+
+    system_prompt = (
+        "You are Vidya AI, an expert educational planner. Your task is to generate a comprehensive, personalized study plan "
+        f"for exactly {num_days} days based on the uploaded content/syllabus and dates.\n\n"
+        f"You MUST generate EXACTLY {num_days} day-by-day entries in the 'plan' list. There should be exactly one entry in the list for each day, starting on {payload.start_date} and ending on {payload.end_date}.\n\n"
+        "Guidelines:\n"
+        "- Distribute the parsed content/syllabus text logically and evenly across the days.\n"
+        "- Estimate topic difficulty (easy, medium, hard) and allocate more hours to difficult topics (Hard: 3 hours, Medium: 2 hours, Easy: 1 hour).\n"
+        "- Include revision sessions automatically (e.g. every 4th day should be an intermediate revision of previous topics).\n"
+        "- Reserve the final 1-2 days specifically for overall final revision.\n"
+        "- Provide a daily study schedule with dates, topic names, and specific checklist tasks.\n\n"
+        "The response must be a JSON object containing two keys:\n"
+        "1. 'topics': a list of extracted syllabus topics and their subtopics, in the format:\n"
+        "   [\n"
+        "     { \"title\": \"Topic Title\", \"subtopics\": [\"Subtopic 1\", \"Subtopic 2\"] }\n"
+        "   ]\n"
+        "2. 'plan': a list of day-by-day study schedule items, where each day has the format:\n"
+        "   {\n"
+        "     \"dayNum\": 1,\n"
+        "     \"date\": \"YYYY-MM-DD\",\n"
+        "     \"topic\": \"Clear Topic Title\",\n"
+        "     \"difficulty\": \"easy|medium|hard\",\n"
+        "     \"description\": \"Detailed explanation of what to study.\",\n"
+        "     \"estimatedHours\": 2,\n"
+        "     \"tasks\": [\n"
+        "       { \"title\": \"Specific task 1\", \"completed\": false },\n"
+        "       { \"title\": \"Specific task 2\", \"completed\": false }\n"
+        "     ]\n"
+        "   }\n"
+    )
+    user_prompt = (
+        f"Number of study days: {num_days}\n"
+        f"Uploaded content/syllabus text:\n\"\"\"\n{extracted_text[:6000]}\n\"\"\"\n\n"
+        "Please generate the personalized JSON study plan."
+    )
+
+    router = get_llm_router()
+    raw = router.generate_json(
+        task="chat",
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=0.3,
+        max_completion_tokens=1800,
+    )
+
+    plan_list = raw.get("plan") if isinstance(raw, dict) else None
+    extracted_topics_dict = raw.get("topics") if isinstance(raw, dict) else None
+
+    # If the LLM router is not configured or returned invalid structure, fallback to the text parser:
+    if not plan_list or not isinstance(plan_list, list) or not extracted_topics_dict:
+        extracted_topics_dict = extract_structured_topics(extracted_text)
+        plan_list = generate_schedule_from_topics(extracted_topics_dict, payload.start_date, payload.end_date)
+    else:
+        # Standardize topics list format
+        standardized_topics = []
+        for t in (extracted_topics_dict or []):
+            if isinstance(t, dict):
+                title = t.get("title") or "Study Topic"
+                subtopics = t.get("subtopics") or []
+                standardized_topics.append({"title": title, "subtopics": subtopics})
+        extracted_topics_dict = {"topics": standardized_topics}
+
+        # Standardize plan list format
+        standardized_plan = []
+        for d in plan_list:
+            if not isinstance(d, dict):
+                continue
+            day_num = d.get("dayNum") or d.get("day_num") or len(standardized_plan) + 1
+            date_str = d.get("date") or (start + timedelta(days=day_num-1)).strftime("%Y-%m-%d")
+            topic = d.get("topic") or "General Study Topic"
+            difficulty = d.get("difficulty") or "medium"
+            est_hours = d.get("estimatedHours") or d.get("estimated_hours") or 2
+            description = d.get("description") or "Read and summarize this topic."
+            tasks = []
+            for t in d.get("tasks") or []:
+                if isinstance(t, dict):
+                    title = t.get("title") or "Study task"
+                    completed = bool(t.get("completed", False))
+                    tasks.append({"title": title, "completed": completed})
+                elif isinstance(t, str):
+                    tasks.append({"title": t, "completed": False})
+            standardized_plan.append({
+                "dayNum": day_num,
+                "date": date_str,
+                "topic": topic,
+                "description": description,
+                "difficulty": difficulty,
+                "estimatedHours": est_hours,
+                "tasks": tasks
+            })
+        plan_list = standardized_plan
+
+    topics_count = len(extracted_topics_dict.get("topics") or [])
+    estimated_hours = sum(d.get("estimatedHours") or d.get("estimated_hours") or 2 for d in plan_list)
+    summary_text = generate_concise_summary(extracted_text, payload.file_name, num_pages, topics_count, estimated_hours)
+
+    db_plan = StudyPlan(
+        user_id=user.id,
+        start_date=payload.start_date,
+        end_date=payload.end_date,
+        file_name=payload.file_name,
+        file_path=saved_name,
+        num_days=num_days,
+        plan_data=plan_list,
+        extracted_topics=extracted_topics_dict,
+        progress=0.0,
+        num_pages=num_pages,
+        estimated_hours=estimated_hours,
+        summary=summary_text,
+        raw_text=extracted_text,
+    )
+    db.add(db_plan)
+    db.commit()
+    db.refresh(db_plan)
+
+    return StudyPlanOut(
+        id=db_plan.id,
+        start_date=db_plan.start_date,
+        end_date=db_plan.end_date,
+        file_name=db_plan.file_name,
+        file_url=file_url,
+        num_days=db_plan.num_days,
+        plan_data=db_plan.plan_data,
+        extracted_topics=db_plan.extracted_topics,
+        progress=db_plan.progress,
+        num_pages=db_plan.num_pages,
+        estimated_hours=db_plan.estimated_hours,
+        summary=db_plan.summary,
+        raw_text=db_plan.raw_text,
+        created_at=db_plan.created_at,
+    )
+
+
+@app.post("/api/studyplan/{plan_id}/toggle", response_model=StudyPlanOut)
+def toggle_study_plan_task(plan_id: int, payload: StudyPlanTaskToggleRequest, db: Session = Depends(get_db)) -> Any:
+    user = get_primary_user(db)
+    row = db.get(StudyPlan, plan_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Study plan not found")
+
+    plan_data = list(row.plan_data or [])
+
+    day_found = None
+    for day in plan_data:
+        day_num = day.get("dayNum") or day.get("day_num")
+        if day_num == payload.day_num:
+            day_found = day
+            break
+
+    if day_found is None:
+        raise HTTPException(status_code=400, detail=f"Day {payload.day_num} not found in plan")
+
+    tasks = day_found.get("tasks") or []
+    if payload.task_index < 0 or payload.task_index >= len(tasks):
+        raise HTTPException(status_code=400, detail="Invalid task index")
+
+    tasks[payload.task_index]["completed"] = payload.completed
+
+    total_tasks = 0
+    completed_tasks = 0
+    for day in plan_data:
+        for task in day.get("tasks") or []:
+            total_tasks += 1
+            if task.get("completed"):
+                completed_tasks += 1
+
+    row.progress = round((completed_tasks / max(1, total_tasks)) * 100, 1)
+    row.plan_data = plan_data
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(row, "plan_data")
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+
+    file_url = f"/uploads/{row.file_path}" if row.file_path else None
+    return StudyPlanOut(
+        id=row.id,
+        start_date=row.start_date,
+        end_date=row.end_date,
+        file_name=row.file_name,
+        file_url=file_url,
+        num_days=row.num_days,
+        plan_data=row.plan_data,
+        extracted_topics=row.extracted_topics,
+        progress=row.progress,
+        num_pages=row.num_pages if hasattr(row, "num_pages") else 1,
+        estimated_hours=row.estimated_hours if hasattr(row, "estimated_hours") else 10,
+        summary=row.summary if hasattr(row, "summary") else None,
+        raw_text=row.raw_text if hasattr(row, "raw_text") else None,
+        created_at=row.created_at,
+    )
 
 
 if __name__ == "__main__":

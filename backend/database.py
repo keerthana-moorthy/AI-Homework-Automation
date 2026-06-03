@@ -15,6 +15,41 @@ engine = create_engine(
     future=True,
 )
 
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE study_plans ADD COLUMN extracted_topics JSON"))
+except Exception:
+    pass
+
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE study_plans ADD COLUMN num_pages INTEGER DEFAULT 1"))
+except Exception:
+    pass
+
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE study_plans ADD COLUMN estimated_hours INTEGER DEFAULT 10"))
+except Exception:
+    pass
+
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE study_plans ADD COLUMN summary TEXT"))
+except Exception:
+    pass
+
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE study_plans ADD COLUMN raw_text TEXT"))
+except Exception:
+    pass
+
 SessionLocal = sessionmaker(
     bind=engine,
     autoflush=False,

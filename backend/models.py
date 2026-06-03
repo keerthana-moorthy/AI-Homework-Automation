@@ -212,6 +212,27 @@ class AdaptiveQuizAttempt(Base):
     session: Mapped[AdaptiveQuizSession] = relationship(back_populates="attempts")
     user: Mapped[UserProfile] = relationship(backref="adaptive_quiz_attempts")
 
+class StudyPlan(Base):
+    __tablename__ = "study_plans"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("user_profiles.id"), nullable=False, index=True)
+    start_date: Mapped[str] = mapped_column(String(40), nullable=False)
+    end_date: Mapped[str] = mapped_column(String(40), nullable=False)
+    file_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    num_days: Mapped[int] = mapped_column(Integer, nullable=False)
+    plan_data: Mapped[list[dict]] = mapped_column(JSON, nullable=False, default=list)
+    progress: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    extracted_topics: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=dict)
+    num_pages: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    estimated_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+
+    user: Mapped[UserProfile] = relationship(backref="study_plans")
+
 
 def touch_timestamp() -> str:
     return now_iso()

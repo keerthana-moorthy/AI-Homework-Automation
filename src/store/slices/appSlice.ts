@@ -23,7 +23,7 @@ const initialState: AppState = {
   isLoggedIn: false,
   activeScreen: 1, // Start with Onboarding view
   language: 'en',
-  selectedSubjectId: 'maths',
+  selectedSubjectId: 'all',
   loading: true,
   user: {
     name: 'Arjun',

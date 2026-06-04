@@ -58,11 +58,15 @@ from .schemas import (
     StudyPlanGenerateRequest,
     StudyPlanOut,
     StudyPlanTaskToggleRequest,
+    StudyPlanHistoryOut,
+    StudyPlanRenameRequest,
     SubjectOut,
     SubscriptionOut,
     SubscriptionUpdateRequest,
     StudentAnalyticsOut,
     UserOut,
+    TodayHomeworkItem,
+    TodayActionItem,
 )
 from .services.analytics_service import build_recommendations, build_student_analytics
 from .services.orchestrator import get_vidya_ai_core
@@ -101,8 +105,33 @@ def on_startup() -> None:
             conn.execute(text("ALTER TABLE study_plans ADD COLUMN extracted_topics JSON"))
     except Exception:
         pass
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE study_plans ADD COLUMN title VARCHAR(255) DEFAULT 'Study Plan'"))
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE study_plans ADD COLUMN updated_at DATETIME"))
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE study_plans SET updated_at = created_at WHERE updated_at IS NULL"))
+    except Exception:
+        pass
     with SessionLocal() as db:
         seed_database(db)
+
+
+STUDY_PLAN_LIMITS = {
+    "Free": 3,
+    "Premium": 5,
+    "Premium Plus": 10,
+}
 
 
 def build_app_info() -> dict[str, Any]:
@@ -128,7 +157,7 @@ def seed_database(db: Session) -> UserProfile:
             language="en",
             logged_in=False,
             active_screen=1,
-            selected_subject_id="maths",
+            selected_subject_id="all",
             homework_completed=7,
             doubts_solved=24,
             quiz_correct=0,
@@ -356,7 +385,10 @@ def ensure_quiz_session(db: Session, user: UserProfile) -> None:
     ensure_adaptive_quiz_session(db, user)
 
 
-def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
+def build_dashboard_payload(db: Session, user: UserProfile, today_date_str: str | None = None) -> dict[str, Any]:
+    if today_date_str is None:
+        today_date_str = datetime.utcnow().strftime("%Y-%m-%d")
+
     subjects = get_subjects(db)
     selected_subject = get_selected_subject(db, user)
     analysis_payload = latest_analysis_payload(db, user)
@@ -366,6 +398,106 @@ def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
         if analysis_payload and analysis_payload.get("recommendations")
         else PARENT_RECOMMENDATIONS
     )
+
+    # Query today's homework assignments
+    try:
+        today_dt = datetime.strptime(today_date_str, "%Y-%m-%d")
+        start_of_day = datetime(today_dt.year, today_dt.month, today_dt.day, 0, 0, 0)
+        end_of_day = datetime(today_dt.year, today_dt.month, today_dt.day, 23, 59, 59, 999999)
+        homework_rows = db.scalars(
+            select(HomeworkAnalysis)
+            .where(
+                HomeworkAnalysis.user_id == user.id,
+                HomeworkAnalysis.created_at >= start_of_day,
+                HomeworkAnalysis.created_at <= end_of_day
+            )
+            .order_by(desc(HomeworkAnalysis.created_at))
+        ).all()
+    except Exception:
+        homework_rows = []
+
+    today_homework = []
+    for row in homework_rows:
+        subject = db.get(Subject, row.subject_id) if row.subject_id else None
+        today_homework.append(
+            TodayHomeworkItem(
+                id=row.id,
+                title=row.file_name or (row.question_text[:50] + "..." if row.question_text and len(row.question_text) > 50 else row.question_text) or "Homework Scan",
+                subject_id=row.subject_id,
+                subject_name=subject.name if subject else None,
+                subject_emoji=subject.emoji if subject else None,
+                due_date=row.created_at.strftime("%Y-%m-%d"),
+                status="Completed" if row.status == "ok" else "Pending",
+                created_at=row.created_at
+            )
+        )
+
+    # Query today's study plan action items from visible plans
+    limit = STUDY_PLAN_LIMITS.get(user.subscription_plan, 3)
+    plans = db.scalars(
+        select(StudyPlan)
+        .where(StudyPlan.user_id == user.id)
+        .order_by(desc(StudyPlan.created_at), desc(StudyPlan.id))
+        .limit(limit)
+    ).all()
+
+    today_action_items = []
+    for plan in plans:
+        plan_data = plan.plan_data or []
+        for day in plan_data:
+            if day.get("date") == today_date_str:
+                day_num = day.get("dayNum") or day.get("day_num") or 1
+                estimated_hours = day.get("estimatedHours") or day.get("estimated_hours")
+                tasks = day.get("tasks") or []
+                for idx, task in enumerate(tasks):
+                    today_action_items.append(
+                        TodayActionItem(
+                            id=f"{plan.id}_{day_num}_{idx}",
+                            title=task.get("title") or "Study Task",
+                            plan_title=plan.title or "Study Plan",
+                            estimated_hours=estimated_hours,
+                            completed=bool(task.get("completed", False)),
+                            plan_id=plan.id,
+                            day_num=day_num,
+                            task_index=idx
+                        )
+                    )
+
+    # Collect carry-over: incomplete tasks from past days (up to 7 days back)
+    carry_over_items: list[TodayActionItem] = []
+    try:
+        cutoff_date = (datetime.strptime(today_date_str, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+    except Exception:
+        cutoff_date = ""
+
+    for plan in plans:
+        plan_data = plan.plan_data or []
+        for day in plan_data:
+            day_date = day.get("date", "")
+            # Only past days (strictly before today) within the 7-day window
+            if not day_date or day_date >= today_date_str:
+                continue
+            if cutoff_date and day_date < cutoff_date:
+                continue
+            tasks = day.get("tasks") or []
+            day_num = day.get("dayNum") or day.get("day_num") or 1
+            estimated_hours = day.get("estimatedHours") or day.get("estimated_hours")
+            for idx, task in enumerate(tasks):
+                if not task.get("completed", False):
+                    carry_over_items.append(
+                        TodayActionItem(
+                            id=f"{plan.id}_{day_num}_{idx}_co",
+                            title=task.get("title") or "Study Task",
+                            plan_title=plan.title or "Study Plan",
+                            estimated_hours=estimated_hours,
+                            completed=False,
+                            plan_id=plan.id,
+                            day_num=day_num,
+                            task_index=idx,
+                            is_carry_over=True,
+                            original_date=day_date,
+                        )
+                    )
 
     dashboard = DashboardOut(
         app=AppInfo(
@@ -386,8 +518,15 @@ def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
         selected_subject=selected_subject,
         study_plan=study_plan,
         last_analysis=analysis_payload,
+        today_homework=today_homework,
+        today_action_items=today_action_items,
+        carry_over_count=len(carry_over_items),
     )
-    return dashboard.model_dump(by_alias=True, exclude_none=True)
+    payload = dashboard.model_dump(by_alias=True, exclude_none=True)
+    # Attach carry-over items separately so frontend can render them in distinct section
+    payload["carryOverItems"] = [item.model_dump(by_alias=True, exclude_none=True) for item in carry_over_items]
+    return payload
+
 
 
 def build_parent_payload(db: Session, user: UserProfile) -> dict[str, Any]:
@@ -691,18 +830,28 @@ async def update_language(payload: SessionUpdateRequest, db: Session = Depends(g
 async def update_subject(payload: SessionUpdateRequest, db: Session = Depends(get_db)) -> dict[str, Any]:
     if not payload.selected_subject_id:
         raise HTTPException(status_code=400, detail="selectedSubjectId is required")
-    subject = db.get(Subject, payload.selected_subject_id)
-    if subject is None:
-        raise HTTPException(status_code=404, detail="Unknown subject")
+    
     user = get_primary_user(db)
     user.selected_subject_id = payload.selected_subject_id
     db.add(user)
     db.commit()
-    payload_data = {
-        "ok": True,
-        **build_session_and_user_payload(user),
-        "selectedSubject": serialize_subject(subject),
-    }
+    
+    if payload.selected_subject_id == "all":
+        payload_data = {
+            "ok": True,
+            **build_session_and_user_payload(user),
+            "selectedSubject": None,
+        }
+    else:
+        subject = db.get(Subject, payload.selected_subject_id)
+        if subject is None:
+            raise HTTPException(status_code=404, detail="Unknown subject")
+        payload_data = {
+            "ok": True,
+            **build_session_and_user_payload(user),
+            "selectedSubject": serialize_subject(subject),
+        }
+        
     await broadcast_event("subject_selected", payload_data)
     return payload_data
 
@@ -719,9 +868,9 @@ def onboarding() -> dict[str, Any]:
 
 
 @app.get("/api/dashboard")
-def dashboard(db: Session = Depends(get_db)) -> dict[str, Any]:
+def dashboard(today: str | None = Query(default=None), db: Session = Depends(get_db)) -> dict[str, Any]:
     user = get_primary_user(db)
-    return {"ok": True, **build_dashboard_payload(db, user)}
+    return {"ok": True, **build_dashboard_payload(db, user, today_date_str=today)}
 
 
 @app.get("/api/subjects")
@@ -1264,10 +1413,13 @@ async def session_update(payload: SessionUpdateRequest, db: Session = Depends(ge
     if payload.language is not None:
         user.language = payload.language
     if payload.selected_subject_id is not None:
-        subject = db.get(Subject, payload.selected_subject_id)
-        if subject is None:
-            raise HTTPException(status_code=404, detail="Unknown subject")
-        user.selected_subject_id = payload.selected_subject_id
+        if payload.selected_subject_id == "all":
+            user.selected_subject_id = "all"
+        else:
+            subject = db.get(Subject, payload.selected_subject_id)
+            if subject is None:
+                raise HTTPException(status_code=404, detail="Unknown subject")
+            user.selected_subject_id = payload.selected_subject_id
     db.add(user)
     db.commit()
     response = {"ok": True, **build_session_and_user_payload(user)}
@@ -1290,6 +1442,98 @@ async def websocket_updates(websocket: WebSocket) -> None:
         manager.disconnect(websocket)
 
 
+@app.get("/api/studyplan/history", response_model=StudyPlanHistoryOut)
+def get_study_plan_history(db: Session = Depends(get_db)) -> Any:
+    user = get_primary_user(db)
+    rows = db.scalars(
+        select(StudyPlan)
+        .where(StudyPlan.user_id == user.id)
+        .order_by(desc(StudyPlan.created_at), desc(StudyPlan.id))
+    ).all()
+    
+    plans = []
+    for row in rows:
+        file_url = f"/uploads/{row.file_path}" if row.file_path else None
+        plans.append(
+            StudyPlanOut(
+                id=row.id,
+                title=row.title if getattr(row, "title", None) else "Study Plan",
+                start_date=row.start_date,
+                end_date=row.end_date,
+                file_name=row.file_name,
+                file_url=file_url,
+                num_days=row.num_days,
+                plan_data=row.plan_data,
+                progress=row.progress,
+                extracted_topics=row.extracted_topics,
+                num_pages=row.num_pages if hasattr(row, "num_pages") else 1,
+                estimated_hours=row.estimated_hours if hasattr(row, "estimated_hours") else 10,
+                summary=row.summary if hasattr(row, "summary") else None,
+                raw_text=row.raw_text if hasattr(row, "raw_text") else None,
+                created_at=row.created_at,
+                updated_at=row.updated_at if getattr(row, "updated_at", None) else row.created_at,
+            )
+        )
+        
+    limit = STUDY_PLAN_LIMITS.get(user.subscription_plan, 3)
+    used = len(plans)
+    plans = plans[:limit]
+    remaining = max(0, limit - used)
+    
+    return StudyPlanHistoryOut(
+        plans=plans,
+        limit=limit,
+        used=used,
+        remaining=remaining,
+    )
+
+
+@app.post("/api/studyplan/{plan_id}/rename", response_model=StudyPlanOut)
+def rename_study_plan(plan_id: int, payload: StudyPlanRenameRequest, db: Session = Depends(get_db)) -> Any:
+    user = get_primary_user(db)
+    row = db.get(StudyPlan, plan_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Study plan not found")
+        
+    row.title = payload.title.strip() or "Study Plan"
+    row.updated_at = datetime.utcnow()
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    
+    file_url = f"/uploads/{row.file_path}" if row.file_path else None
+    return StudyPlanOut(
+        id=row.id,
+        title=row.title,
+        start_date=row.start_date,
+        end_date=row.end_date,
+        file_name=row.file_name,
+        file_url=file_url,
+        num_days=row.num_days,
+        plan_data=row.plan_data,
+        progress=row.progress,
+        extracted_topics=row.extracted_topics,
+        num_pages=row.num_pages if hasattr(row, "num_pages") else 1,
+        estimated_hours=row.estimated_hours if hasattr(row, "estimated_hours") else 10,
+        summary=row.summary if hasattr(row, "summary") else None,
+        raw_text=row.raw_text if hasattr(row, "raw_text") else None,
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+    )
+
+
+@app.delete("/api/studyplan/{plan_id}")
+def delete_study_plan(plan_id: int, db: Session = Depends(get_db)) -> Any:
+    user = get_primary_user(db)
+    row = db.get(StudyPlan, plan_id)
+    if row is None or row.user_id != user.id:
+        raise HTTPException(status_code=404, detail="Study plan not found")
+        
+    db.delete(row)
+    db.commit()
+    return {"ok": True}
+
+
 @app.get("/api/studyplan/latest", response_model=StudyPlanOut | None)
 def get_latest_study_plan(db: Session = Depends(get_db)) -> Any:
     user = get_primary_user(db)
@@ -1304,6 +1548,7 @@ def get_latest_study_plan(db: Session = Depends(get_db)) -> Any:
     file_url = f"/uploads/{row.file_path}" if row.file_path else None
     return StudyPlanOut(
         id=row.id,
+        title=row.title if getattr(row, "title", None) else "Study Plan",
         start_date=row.start_date,
         end_date=row.end_date,
         file_name=row.file_name,
@@ -1317,6 +1562,7 @@ def get_latest_study_plan(db: Session = Depends(get_db)) -> Any:
         summary=row.summary if hasattr(row, "summary") else None,
         raw_text=row.raw_text if hasattr(row, "raw_text") else None,
         created_at=row.created_at,
+        updated_at=row.updated_at if getattr(row, "updated_at", None) else row.created_at,
     )
 
 
@@ -1682,6 +1928,18 @@ def generate_concise_summary(text: str, subject_name: str, num_pages: int, topic
 async def generate_study_plan(payload: StudyPlanGenerateRequest, db: Session = Depends(get_db)) -> Any:
     user = get_primary_user(db)
 
+    # Check limit before generating
+    limit = STUDY_PLAN_LIMITS.get(user.subscription_plan, 3)
+    from sqlalchemy import func
+    current_count = db.scalar(
+        select(func.count(StudyPlan.id)).where(StudyPlan.user_id == user.id)
+    )
+    if current_count >= limit:
+        raise HTTPException(
+            status_code=403,
+            detail=f"You have reached your limit of {limit} study plans for the '{user.subscription_plan}' plan. Please delete an existing plan or upgrade to unlock more slots."
+        )
+
     try:
         start = datetime.strptime(payload.start_date, "%Y-%m-%d")
         end = datetime.strptime(payload.end_date, "%Y-%m-%d")
@@ -1849,8 +2107,15 @@ async def generate_study_plan(payload: StudyPlanGenerateRequest, db: Session = D
     estimated_hours = sum(d.get("estimatedHours") or d.get("estimated_hours") or 2 for d in plan_list)
     summary_text = generate_concise_summary(extracted_text, payload.file_name, num_pages, topics_count, estimated_hours)
 
+    # Auto-generate title
+    if payload.file_name:
+        plan_title = f"Study Plan: {payload.file_name}"
+    else:
+        plan_title = f"Study Plan ({payload.start_date} to {payload.end_date})"
+
     db_plan = StudyPlan(
         user_id=user.id,
+        title=plan_title,
         start_date=payload.start_date,
         end_date=payload.end_date,
         file_name=payload.file_name,
@@ -1870,6 +2135,7 @@ async def generate_study_plan(payload: StudyPlanGenerateRequest, db: Session = D
 
     return StudyPlanOut(
         id=db_plan.id,
+        title=db_plan.title,
         start_date=db_plan.start_date,
         end_date=db_plan.end_date,
         file_name=db_plan.file_name,
@@ -1883,6 +2149,7 @@ async def generate_study_plan(payload: StudyPlanGenerateRequest, db: Session = D
         summary=db_plan.summary,
         raw_text=db_plan.raw_text,
         created_at=db_plan.created_at,
+        updated_at=db_plan.updated_at,
     )
 
 
@@ -1930,6 +2197,7 @@ def toggle_study_plan_task(plan_id: int, payload: StudyPlanTaskToggleRequest, db
     file_url = f"/uploads/{row.file_path}" if row.file_path else None
     return StudyPlanOut(
         id=row.id,
+        title=row.title if getattr(row, "title", None) else "Study Plan",
         start_date=row.start_date,
         end_date=row.end_date,
         file_name=row.file_name,
@@ -1943,6 +2211,7 @@ def toggle_study_plan_task(plan_id: int, payload: StudyPlanTaskToggleRequest, db
         summary=row.summary if hasattr(row, "summary") else None,
         raw_text=row.raw_text if hasattr(row, "raw_text") else None,
         created_at=row.created_at,
+        updated_at=row.updated_at if getattr(row, "updated_at", None) else row.created_at,
     )
 
 

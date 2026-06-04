@@ -89,6 +89,7 @@ export interface StudyPlanDay {
 
 export interface StudyPlan {
   id: number;
+  title?: string;
   startDate: string;
   endDate: string;
   fileName: string | null;
@@ -102,5 +103,40 @@ export interface StudyPlan {
   summary: string | null;
   rawText: string | null;
   createdAt: string;
+  updatedAt?: string;
 }
 
+export interface TodayHomeworkItem {
+  id: number;
+  title: string;
+  subjectId: string | null;
+  subjectName: string | null;
+  subjectEmoji: string | null;
+  dueDate: string;
+  status: string;
+  createdAt: string;
+}
+
+export interface TodayActionItem {
+  id: string;
+  title: string;
+  planTitle: string;
+  estimatedHours: number | null;
+  completed: boolean;
+  planId: number;
+  dayNum: number;
+  taskIndex: number;
+  /** True when this task belongs to a past (missed) day */
+  isCarryOver?: boolean;
+  /** The original date string (YYYY-MM-DD) of the past day */
+  originalDate?: string;
+}
+
+/** Semantic status of a single plan day relative to today */
+export type DayStatus =
+  | 'completed'   // all tasks done
+  | 'in_progress' // today, some tasks done
+  | 'not_started' // today, no tasks done
+  | 'partial'     // past day, some tasks done
+  | 'missed'      // past day, zero tasks done
+  | 'upcoming';   // future day

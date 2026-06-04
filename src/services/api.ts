@@ -1,4 +1,4 @@
-import type { ActionCard, HWStep, OnboardingFeature, ParentStat, QuizQuestion, Recommendation, StudyPlan, Subject, UserState } from '../types/types';
+import type { ActionCard, HWStep, OnboardingFeature, ParentStat, QuizQuestion, Recommendation, StudyPlan, Subject, UserState, TodayHomeworkItem, TodayActionItem } from '../types/types';
 
 const runtimeApiBase =
   typeof window !== 'undefined' && ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
@@ -74,7 +74,12 @@ export interface DashboardPayload {
   selectedSubject: Subject | null;
   studyPlan: Array<{ id: string; title: string; description: string; progress: number; priority: string }>;
   lastAnalysis: JsonRecord | null;
+  todayHomework?: TodayHomeworkItem[];
+  todayActionItems?: TodayActionItem[];
+  carryOverItems?: TodayActionItem[];
+  carryOverCount?: number;
 }
+
 
 export interface OnboardingPayload {
   app: AppInfoPayload;
@@ -284,7 +289,8 @@ export const updateSession = (payload: { activeScreen?: number; language?: 'en' 
   });
 
 export const getBootstrap = () => request<JsonRecord>('/api/bootstrap');
-export const getDashboard = () => request<DashboardPayload>('/api/dashboard');
+export const getDashboard = (today?: string) =>
+  request<DashboardPayload>(`/api/dashboard${today ? `?today=${encodeURIComponent(today)}` : ''}`);
 export const getOnboarding = () => request<OnboardingPayload>('/api/onboarding');
 export const getExplanation = (analysisId?: number | null) =>
   request<ExplanationPayload>(`/api/explanation${analysisId ? `?analysisId=${encodeURIComponent(String(analysisId))}` : ''}`);
@@ -335,7 +341,27 @@ export interface StudyPlanGeneratePayload {
   pastedText?: string;
 }
 
+export interface StudyPlanHistoryPayload {
+  plans: StudyPlan[];
+  limit: number;
+  used: number;
+  remaining: number;
+}
+
 export const getLatestStudyPlan = () => request<StudyPlan | null>('/api/studyplan/latest');
+
+export const getStudyPlanHistory = () => request<StudyPlanHistoryPayload>('/api/studyplan/history');
+
+export const renameStudyPlan = (planId: number, title: string) =>
+  request<StudyPlan>(`/api/studyplan/${planId}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ title }),
+  });
+
+export const deleteStudyPlan = (planId: number) =>
+  request<{ ok: boolean }>(`/api/studyplan/${planId}`, {
+    method: 'DELETE',
+  });
 
 export const generateStudyPlan = (payload: StudyPlanGeneratePayload) =>
   request<StudyPlan>('/api/studyplan/generate', {

@@ -5,7 +5,7 @@ export const SUBJECTS: Subject[] = [
   { id: 'science', name: 'Science', emoji: '🔬', colorClass: 'bg-brand-greenLight text-brand-greenDark border-brand-greenBorder', progress: 55, colorHex: '#7B5EA7' },
   { id: 'english', name: 'English', emoji: '📖', colorClass: 'bg-brand-orangeLight text-brand-orangeHover border-brand-amberBorder', progress: 88, colorHex: '#4CAF50' },
   { id: 'tamil', name: 'Tamil', emoji: '🅰', colorClass: 'bg-brand-purpleLight text-brand-purple border-brand-purpleBorder', progress: 64, colorHex: '#2196F3' },
-  { id: 'history', name: 'History', emoji: '📅', colorClass: 'bg-brand-yellowLight text-brand-yellowDark border-brand-yellowBorder', progress: 40, colorHex: '#F57F17' },
+  { id: 'social', name: 'Social', emoji: '📅', colorClass: 'bg-brand-yellowLight text-brand-yellowDark border-brand-yellowBorder', progress: 40, colorHex: '#F57F17' },
 ];
 
 export const ACTION_CARDS: ActionCard[] = [

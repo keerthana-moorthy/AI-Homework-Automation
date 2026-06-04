@@ -50,6 +50,27 @@ try:
 except Exception:
     pass
 
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE study_plans ADD COLUMN title VARCHAR(255) DEFAULT 'Study Plan'"))
+except Exception:
+    pass
+
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE study_plans ADD COLUMN updated_at DATETIME"))
+except Exception:
+    pass
+
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("UPDATE study_plans SET updated_at = created_at WHERE updated_at IS NULL"))
+except Exception:
+    pass
+
 SessionLocal = sessionmaker(
     bind=engine,
     autoflush=False,

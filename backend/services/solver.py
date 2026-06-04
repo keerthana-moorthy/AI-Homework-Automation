@@ -44,7 +44,7 @@ SUBJECT_KEYWORDS = {
         "tense",
     ],
     "tamil": ["tamil", "தமிழ்", "vocabulary", "sentence"],
-    "history": ["history", "ancient", "king", "empire", "war", "timeline", "revolution"],
+    "social": ["history", "social", "civics", "geography", "empire", "war", "timeline", "revolution"],
 }
 
 
@@ -153,7 +153,7 @@ def build_quiz(variable: str, answer: float, equation_text: str) -> dict[str, An
 
 def detect_subject(subject: str | None, question_text: str) -> dict[str, Any]:
     explicit = (subject or "").lower().strip()
-    known_subjects = {"maths", "science", "english", "tamil", "history"}
+    known_subjects = {"maths", "science", "english", "tamil", "social"}
 
     if explicit in known_subjects:
         return {

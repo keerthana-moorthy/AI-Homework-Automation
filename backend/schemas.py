@@ -269,16 +269,44 @@ class SessionOut(CamelModel):
     selected_subject_id: str | None = None
 
 
+class TodayHomeworkItem(CamelModel):
+    id: int
+    title: str
+    subject_id: str | None = None
+    subject_name: str | None = None
+    subject_emoji: str | None = None
+    due_date: str
+    status: str
+    created_at: datetime
+
+
+class TodayActionItem(CamelModel):
+    id: str
+    title: str
+    plan_title: str
+    estimated_hours: int | None = None
+    completed: bool
+    plan_id: int
+    day_num: int
+    task_index: int
+    is_carry_over: bool = False
+    original_date: str | None = None
+
+
 class DashboardOut(CamelModel):
     app: AppInfo
     user: UserOut
     subjects: list[SubjectOut]
-    action_cards: list[ActionCardOut]
     weekly_progress: list[dict[str, Any]]
     recommendations: list[RecommendationOut]
     selected_subject: SubjectOut | None = None
     study_plan: list[dict[str, Any]] = Field(default_factory=list)
     last_analysis: dict[str, Any] | None = None
+    today_homework: list[TodayHomeworkItem] = Field(default_factory=list)
+    today_action_items: list[TodayActionItem] = Field(default_factory=list)
+    carry_over_count: int = 0
+
+
 
 
 class OnboardingOut(CamelModel):
@@ -404,6 +432,7 @@ class StudyPlanDay(CamelModel):
 
 class StudyPlanOut(CamelModel):
     id: int
+    title: str
     start_date: str
     end_date: str
     file_name: str | None = None
@@ -417,11 +446,23 @@ class StudyPlanOut(CamelModel):
     summary: str | None = None
     raw_text: str | None = None
     created_at: datetime
+    updated_at: datetime
 
 
 class StudyPlanTaskToggleRequest(CamelModel):
     day_num: int
     task_index: int
     completed: bool
+
+
+class StudyPlanRenameRequest(CamelModel):
+    title: str
+
+
+class StudyPlanHistoryOut(CamelModel):
+    plans: list[StudyPlanOut]
+    limit: int
+    used: int
+    remaining: int
 
 

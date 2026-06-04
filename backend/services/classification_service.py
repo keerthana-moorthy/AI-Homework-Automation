@@ -33,9 +33,9 @@ SUBJECT_PROFILES = {
         "keywords": ["tamil", "தமிழ்", "vocabulary", "sentence", "poem", "grammar"],
         "prerequisites": ["script recognition", "basic grammar"],
     },
-    "history": {
-        "label": "History, timelines, civilizations, events, dates, empire, revolution.",
-        "keywords": ["history", "timeline", "empire", "war", "revolution", "king", "ancient", "civilization"],
+    "social": {
+        "label": "Social studies, history, timelines, geography, civics, civilizations, events, dates, empire, revolution.",
+        "keywords": ["history", "timeline", "empire", "war", "revolution", "king", "ancient", "civilization", "geography", "civics", "social", "painting"],
         "prerequisites": ["chronology", "cause and effect"],
     },
     "hindi": {

@@ -152,17 +152,24 @@ export const DashboardView: React.FC = () => {
     if (id === 'science') return 'purple';
     if (id === 'english') return 'green';
     if (id === 'tamil') return 'blue';
+    if (id === 'history') return 'orange';
+    if (id === 'geography') return 'blue';
     if (id === 'social') return 'orange';
     return 'orange';
   };
 
   // Helper to resolve badge variants matching subject IDs
   const getBadgeVariant = (id: string) => {
-    if (id === 'science') return 'sci';
-    if (id === 'english') return 'eng';
-    if (id === 'tamil') return 'tam';
-    if (id === 'social') return 'soc';
-    if (id === 'maths') return 'math';
+    const normalized = (id ?? '').toLowerCase().trim();
+    if (normalized === 'science') return 'sci';
+    if (normalized === 'english') return 'eng';
+    if (normalized === 'tamil') return 'tam';
+    if (normalized === 'history') return 'hist';
+    if (normalized === 'maths' || normalized === 'mathematics') return 'math';
+    if (normalized === 'geography') return 'geo';
+    if (normalized === 'general_knowledge' || normalized === 'general knowledge') return 'gk';
+    if (normalized === 'other') return 'other';
+    if (normalized === 'social') return 'soc';
     return 'default';
   };
 

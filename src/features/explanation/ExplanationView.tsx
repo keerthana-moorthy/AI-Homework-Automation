@@ -15,7 +15,8 @@ import {
 import ExplanationChatPanel from './ExplanationChatPanel';
 
 const getSubjectVariant = (subjectId?: string) => {
-  switch ((subjectId ?? '').toLowerCase()) {
+  const normalized = (subjectId ?? '').toLowerCase().trim();
+  switch (normalized) {
     case 'science':
       return 'sci';
     case 'english':
@@ -25,10 +26,15 @@ const getSubjectVariant = (subjectId?: string) => {
     case 'history':
       return 'hist';
     case 'maths':
+    case 'mathematics':
       return 'math';
-    case 'handwritten':
-    case 'pending':
-    case 'unknown':
+    case 'geography':
+      return 'geo';
+    case 'general_knowledge':
+    case 'general knowledge':
+      return 'gk';
+    case 'other':
+      return 'other';
     default:
       return 'default';
   }
@@ -121,7 +127,10 @@ export const ExplanationView: React.FC = () => {
           <Button variant="back" onClick={() => void handleNavigate(2)} />
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
-              <Badge variant={subjectVariant as any}>{(explanation?.subject?.name as string) ?? 'Homework'}</Badge>
+              <Badge variant={subjectVariant as any}>
+                {explanation?.subject?.emoji ? `${explanation.subject.emoji} ` : ''}
+                {(explanation?.subject?.name as string) ?? 'Homework'}
+              </Badge>
               <Badge variant="white">{scanLabel}</Badge>
               {explanation?.pageCount ? <Badge variant="white">{explanation.pageCount} page(s)</Badge> : null}
             </div>

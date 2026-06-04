@@ -258,7 +258,7 @@ def scan_homework_document(
         "detailedExplanation": "",
         "summary": "",
         "confidence": 0.5,
-        "detectedSubject": detect_subject(subject, fallback_text),
+        "detectedSubject": detect_subject(subject, fallback_text, file_name=file_name),
         "problemType": "text-input",
         "needsManualReview": False,
         "recommendations": [],
@@ -302,7 +302,7 @@ def scan_homework_document(
 
     detected_subject = groq_result.get("detectedSubject") if isinstance(groq_result.get("detectedSubject"), dict) else None
     if not detected_subject:
-        detected_subject = detect_subject(subject, question_text)
+        detected_subject = detect_subject(subject, question_text, file_name=file_name)
 
     page_scan.update(
         {

@@ -32,7 +32,7 @@ DEFAULT_USER = {
 SUBJECTS = [
     {
         "id": "maths",
-        "name": "Maths",
+        "name": "Mathematics",
         "emoji": "📐",
         "progress": 72,
         "colorVariant": "orange",
@@ -42,7 +42,7 @@ SUBJECTS = [
     {
         "id": "science",
         "name": "Science",
-        "emoji": "🔬",
+        "emoji": "🧪",
         "progress": 55,
         "colorVariant": "purple",
         "colorHex": "#7B5EA7",
@@ -67,13 +67,40 @@ SUBJECTS = [
         "focusArea": "Vocabulary and writing",
     },
     {
-        "id": "social",
-        "name": "Social",
-        "emoji": "📅",
+        "id": "history",
+        "name": "History",
+        "emoji": "🏛️",
         "progress": 40,
         "colorVariant": "blue",
         "colorHex": "#F57F17",
         "focusArea": "Timelines, geography, and civics",
+    },
+    {
+        "id": "geography",
+        "name": "Geography",
+        "emoji": "🌍",
+        "progress": 30,
+        "colorVariant": "blue",
+        "colorHex": "#00BCD4",
+        "focusArea": "Maps and locations",
+    },
+    {
+        "id": "general_knowledge",
+        "name": "General Knowledge",
+        "emoji": "📚",
+        "progress": 50,
+        "colorVariant": "orange",
+        "colorHex": "#FF9800",
+        "focusArea": "General topics and facts",
+    },
+    {
+        "id": "other",
+        "name": "Other",
+        "emoji": "📚",
+        "progress": 0,
+        "colorVariant": "gray",
+        "colorHex": "#9E9E9E",
+        "focusArea": "Uncategorized study topics",
     },
 ]
 

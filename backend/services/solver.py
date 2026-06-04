@@ -4,7 +4,7 @@ import math
 import re
 from typing import Any
 
-from ..constants import QUIZ_QUESTIONS, EXPLANATION_TEMPLATE
+from ..constants import QUIZ_QUESTIONS, EXPLANATION_TEMPLATE, SUBJECTS
 
 SUBJECT_KEYWORDS = {
     "maths": [
@@ -151,37 +151,143 @@ def build_quiz(variable: str, answer: float, equation_text: str) -> dict[str, An
     }
 
 
-def detect_subject(subject: str | None, question_text: str) -> dict[str, Any]:
-    explicit = (subject or "").lower().strip()
-    known_subjects = {"maths", "science", "english", "tamil", "social"}
+def get_subject_info(subject_id: str) -> dict[str, Any]:
+    sid = (subject_id or "").lower().strip()
+    if sid == "mathematics" or sid == "math":
+        sid = "maths"
+    elif sid == "general knowledge":
+        sid = "general_knowledge"
+        
+    for sub in SUBJECTS:
+        if sub["id"] == sid:
+            return {
+                "id": sub["id"],
+                "name": sub["name"],
+                "emoji": sub["emoji"]
+            }
+            
+    if sid == "maths":
+        return {"id": "maths", "name": "Mathematics", "emoji": "📐"}
+    if sid == "science":
+        return {"id": "science", "name": "Science", "emoji": "🧪"}
+    if sid == "history":
+        return {"id": "history", "name": "History", "emoji": "🏛️"}
+    if sid == "geography":
+        return {"id": "geography", "name": "Geography", "emoji": "🌍"}
+    if sid == "general_knowledge":
+        return {"id": "general_knowledge", "name": "General Knowledge", "emoji": "📚"}
+    if sid == "other":
+        return {"id": "other", "name": "Other", "emoji": "📚"}
+        
+    return {
+        "id": sid or "general_knowledge",
+        "name": (sid or "general_knowledge").replace("_", " ").capitalize(),
+        "emoji": "📚"
+    }
 
-    if explicit in known_subjects:
+
+def detect_subject(subject: str | None, question_text: str, file_name: str | None = None) -> dict[str, Any]:
+    combined = (question_text or "") + " " + (file_name or "")
+    combined = combined.lower()
+
+    tamil_chars = len(re.findall(r"[\u0B80-\u0BFF]", question_text or ""))
+    if tamil_chars > 5:
+        return {
+            "id": "tamil",
+            "confidence": 0.99,
+            "reason": "Tamil script characters detected in content.",
+        }
+
+    keywords_map = {
+        "maths": [
+            "algebra", "equation", "solve for", "find x", "find y", "find z", "fraction",
+            "percentage", "variable", "simplify", "arithmetic", "geometry", "theorem",
+            "trigonometry", "calculus", "matrix", "integral", "derivative", "value of x",
+            "value of y", "value of z", "solve the equation"
+        ],
+        "science": [
+            "scientist", "science", "force", "motion", "energy", "cell", "atom", "gravity",
+            "physics", "chemistry", "biology", "photosynthesis", "molecule", "ecosystem",
+            "planet", "organism", "acid", "base", "element", "evolution", "respiration",
+            "body parts", "functions of"
+        ],
+        "english": [
+            "english", "grammar", "essay", "synonym", "antonym", "comprehension",
+            "paragraph", "tense", "noun", "verb", "adjective", "preposition", "spelling",
+            "literature"
+        ],
+        "tamil": [
+            "tamil", "தமிழ்", "vocabulary", "sentence"
+        ],
+        "history": [
+            "history", "ancient", "king", "empire", "war", "timeline", "revolution",
+            "independence", "movement", "civilization", "dynasty", "emperor",
+            "gandhi", "freedom struggle", "historic"
+        ],
+        "geography": [
+            "geography", "map", "location", "country", "continent", "ocean", "river",
+            "mountain", "earthquake", "volcano", "latitude", "longitude", "climate",
+            "weather", "soil", "glacier"
+        ],
+        "general_knowledge": [
+            "general knowledge", "trivia", "current affairs", "facts", "quiz", "gk"
+        ],
+    }
+
+    boosts = {key: 0.0 for key in keywords_map}
+
+    if re.search(r"\d+\s*[+\-*/=]\s*\d+", combined) or re.search(r"\b(solve|find|variable)\b", combined):
+        boosts["maths"] += 2.0
+    if re.search(r"[a-zA-Z]\s*=\s*\d+", combined) or re.search(r"\b[xyz]\b", combined):
+        boosts["maths"] += 1.5
+
+    if re.search(r"\b(photosynthesis|mitochondria|chloroplast|gravity|velocity|acceleration|atoms|molecules)\b", combined):
+        boosts["science"] += 3.0
+
+    if re.search(r"\b(independence|movement|mahatma|colonial|empire|civilization|world war|reign|treaty)\b", combined):
+        boosts["history"] += 3.0
+
+    if re.search(r"\b(topography|atmosphere|mountains|rivers|continents|glaciers|volcanoes)\b", combined):
+        boosts["geography"] += 3.0
+
+    scores = {}
+    for subject_id, keywords in keywords_map.items():
+        count = 0
+        for kw in keywords:
+            if len(kw) <= 3:
+                count += combined.count(kw)
+            else:
+                count += len(re.findall(r"\b" + re.escape(kw) + r"\b", combined))
+        scores[subject_id] = count + boosts[subject_id]
+
+    best_subject = max(scores, key=scores.get)
+    best_score = scores[best_subject]
+
+    if best_score >= 1.5:
+        return {
+            "id": best_subject,
+            "confidence": round(min(0.99, max(0.65, 0.5 + (best_score * 0.1))), 2),
+            "reason": f"Content matched subject keywords and rules for {best_subject}.",
+        }
+
+    explicit = (subject or "").lower().strip()
+    if explicit == "math" or explicit == "mathematics":
+        explicit = "maths"
+    elif explicit == "general knowledge":
+        explicit = "general_knowledge"
+
+    valid_subjects = {"maths", "science", "english", "tamil", "history", "geography", "general_knowledge", "other"}
+    if explicit in valid_subjects and explicit != "maths":
         return {
             "id": explicit,
-            "confidence": 0.97,
+            "confidence": 0.95,
             "reason": "The user selected this subject explicitly.",
         }
 
-    normalized = question_text.lower()
-    if re.search(r"[=+\-*/]", normalized) or re.search(r"\bsolve\b|\bfind\b|\bvariable\b", normalized):
-        return {
-            "id": "maths",
-            "confidence": 0.92,
-            "reason": "The text looks like a math equation or a word problem.",
-        }
-
-    for subject_id, keywords in SUBJECT_KEYWORDS.items():
-        if any(keyword in normalized for keyword in keywords):
-            return {
-                "id": subject_id,
-                "confidence": 0.84,
-                "reason": f"Matched subject keywords for {subject_id}.",
-            }
-
     return {
-        "id": "maths",
+        "id": "general_knowledge",
         "confidence": 0.5,
-        "reason": "No strong subject match was found, so Maths is used as a safe default.",
+        "reason": "No strong subject match was found, so General Knowledge is used as a fallback.",
     }
 
 
@@ -391,6 +497,18 @@ def explanation_from_analysis(analysis: dict[str, Any] | None) -> dict[str, Any]
         return EXPLANATION_TEMPLATE.copy()
 
     scan = analysis.get("scan") if isinstance(analysis.get("scan"), dict) else {}
+    subject_payload = analysis.get("detectedSubject") or EXPLANATION_TEMPLATE["subject"]
+    subject_id = subject_payload.get("id") if isinstance(subject_payload, dict) else "general_knowledge"
+    
+    sub_info = get_subject_info(subject_id)
+    subject_data = {
+        "id": sub_info["id"],
+        "name": sub_info["name"],
+        "emoji": sub_info["emoji"],
+        "confidence": subject_payload.get("confidence", 0.5) if isinstance(subject_payload, dict) else 0.5,
+        "reason": subject_payload.get("reason", "") if isinstance(subject_payload, dict) else "",
+    }
+
     if analysis.get("status") != "ok":
         return {
             "question": normalize_text(
@@ -400,7 +518,7 @@ def explanation_from_analysis(analysis: dict[str, Any] | None) -> dict[str, Any]
                 or analysis.get("summary")
                 or EXPLANATION_TEMPLATE["question"],
             ),
-            "subject": analysis.get("detectedSubject") or EXPLANATION_TEMPLATE["subject"],
+            "subject": subject_data,
             "finalAnswer": normalize_text(analysis.get("finalAnswer")) or EXPLANATION_TEMPLATE["finalAnswer"],
             "steps": analysis.get("steps") or scan.get("steps") or EXPLANATION_TEMPLATE["steps"],
         }
@@ -412,12 +530,7 @@ def explanation_from_analysis(analysis: dict[str, Any] | None) -> dict[str, Any]
             or scan.get("extractedText")
             or EXPLANATION_TEMPLATE["question"]
         ),
-        "subject": {
-            "id": analysis["detectedSubject"]["id"],
-            "name": analysis["detectedSubject"]["id"].capitalize(),
-            "confidence": analysis["detectedSubject"]["confidence"],
-            "reason": analysis["detectedSubject"]["reason"],
-        },
+        "subject": subject_data,
         "finalAnswer": normalize_text(analysis.get("finalAnswer")) or EXPLANATION_TEMPLATE["finalAnswer"],
         "steps": analysis.get("steps") or scan.get("steps") or EXPLANATION_TEMPLATE["steps"],
     }

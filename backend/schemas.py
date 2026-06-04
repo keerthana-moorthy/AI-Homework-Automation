@@ -48,6 +48,7 @@ class UserOut(CamelModel):
     quiz_status: str
     quiz_xp_earned_this_session: int
     subscription_plan: str
+    active_analysis_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -279,6 +280,7 @@ class DashboardOut(CamelModel):
     selected_subject: SubjectOut | None = None
     study_plan: list[dict[str, Any]] = Field(default_factory=list)
     last_analysis: dict[str, Any] | None = None
+    recent_homework: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class OnboardingOut(CamelModel):

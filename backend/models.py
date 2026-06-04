@@ -33,6 +33,7 @@ class UserProfile(Base):
     quiz_status: Mapped[str] = mapped_column(String(20), nullable=False, default="idle")
     quiz_xp_earned_this_session: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     subscription_plan: Mapped[str] = mapped_column(String(40), nullable=False, default="Free")
+    active_analysis_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -88,6 +89,7 @@ class HomeworkAnalysis(Base):
     file_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     transcript: Mapped[str | None] = mapped_column(Text, nullable=True)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_viewed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
 
     user: Mapped[UserProfile] = relationship(back_populates="analyses")

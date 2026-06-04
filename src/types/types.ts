@@ -63,6 +63,7 @@ export interface UserState {
   loggedIn?: boolean;
   activeScreen?: number;
   selectedSubjectId?: string | null;
+  activeAnalysisId?: number | null;
   homeworkCompleted?: number;
   doubtsSolved?: number;
   quizCorrect?: number;

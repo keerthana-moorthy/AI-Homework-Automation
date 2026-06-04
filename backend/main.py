@@ -101,6 +101,18 @@ def on_startup() -> None:
             conn.execute(text("ALTER TABLE study_plans ADD COLUMN extracted_topics JSON"))
     except Exception:
         pass
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE homework_analyses ADD COLUMN last_viewed_at DATETIME"))
+    except Exception:
+        pass
+    try:
+        from sqlalchemy import text
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE user_profiles ADD COLUMN active_analysis_id INTEGER"))
+    except Exception:
+        pass
     with SessionLocal() as db:
         seed_database(db)
 
@@ -224,6 +236,10 @@ def get_selected_subject(db: Session, user: UserProfile) -> Subject | None:
 
 
 def latest_analysis_row(db: Session, user: UserProfile) -> HomeworkAnalysis | None:
+    if user.active_analysis_id is not None:
+        row = db.get(HomeworkAnalysis, user.active_analysis_id)
+        if row is not None and row.user_id == user.id:
+            return row
     return db.scalar(
         select(HomeworkAnalysis)
         .where(HomeworkAnalysis.user_id == user.id)
@@ -367,6 +383,24 @@ def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
         else PARENT_RECOMMENDATIONS
     )
 
+    recent_rows = db.scalars(
+        select(HomeworkAnalysis)
+        .where(HomeworkAnalysis.user_id == user.id)
+        .order_by(desc(HomeworkAnalysis.created_at), desc(HomeworkAnalysis.id))
+        .limit(5)
+    ).all()
+
+    recent_homework = []
+    for row in recent_rows:
+        recent_homework.append({
+            "analysisId": row.id,
+            "title": row.file_name or row.question_text or "Untitled Homework",
+            "fileName": row.file_name,
+            "subjectId": row.subject_id,
+            "createdAt": row.created_at.isoformat() if row.created_at else None,
+            "lastViewedAt": row.last_viewed_at.isoformat() if row.last_viewed_at else None,
+        })
+
     dashboard = DashboardOut(
         app=AppInfo(
             name=APP_INFO["name"],
@@ -386,6 +420,7 @@ def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
         selected_subject=selected_subject,
         study_plan=study_plan,
         last_analysis=analysis_payload,
+        recent_homework=recent_homework,
     )
     return dashboard.model_dump(by_alias=True, exclude_none=True)
 
@@ -759,7 +794,24 @@ def explanation(
     db: Session = Depends(get_db),
 ) -> dict[str, Any]:
     user = get_primary_user(db)
-    return {"ok": True, **build_explanation_payload(db, user, analysis_id)}
+    
+    row = None
+    if analysis_id is not None:
+        row = db.get(HomeworkAnalysis, analysis_id)
+        if row is not None and row.user_id != user.id:
+            row = None
+            
+    if row is None:
+        row = latest_analysis_row(db, user)
+        
+    if row is not None:
+        row.last_viewed_at = datetime.utcnow()
+        user.active_analysis_id = row.id
+        db.add(row)
+        db.add(user)
+        db.commit()
+        
+    return {"ok": True, **build_explanation_payload(db, user, row.id if row else None)}
 
 
 @app.post("/api/explanation/chat", response_model=ExplanationChatResponse)
@@ -964,6 +1016,7 @@ async def analyze(payload: HomeworkAnalyzeRequest, db: Session = Depends(get_db)
     analysis_result["scan"] = scan_context_storage
 
     user.selected_subject_id = detected_subject["id"]
+    user.active_analysis_id = analysis.id
     touch_user_level(user)
     db.add(user)
     db.commit()

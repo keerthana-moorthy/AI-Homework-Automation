@@ -54,6 +54,18 @@ export const DashboardView: React.FC = () => {
     });
   };
 
+  const handleResumeHomework = async (analysisId: number) => {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('vidya-latest-analysis-id', String(analysisId));
+    }
+    dispatch(setActiveScreen(3));
+    try {
+      await updateScreen(3);
+    } catch (error) {
+      console.error('Unable to persist screen change', error);
+    }
+  };
+
   const handleSubjectClick = async (subjectId: string) => {
     dispatch(setSelectedSubjectId(subjectId));
     try {
@@ -176,6 +188,84 @@ export const DashboardView: React.FC = () => {
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Recent Homework Section */}
+          <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
+              <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider">
+                Recent Homework
+              </h4>
+              <span className="text-[10px] font-black bg-brand-purpleLight text-brand-purple px-2 py-0.5 rounded-full uppercase">
+                History
+              </span>
+            </div>
+
+            {dashboard?.recentHomework && dashboard.recentHomework.length > 0 ? (
+              <div className="space-y-3">
+                {dashboard.recentHomework.map((hw) => {
+                  const uploadDate = new Date(hw.createdAt).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  });
+                  const lastViewedDate = hw.lastViewedAt
+                    ? new Date(hw.lastViewedAt).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                      })
+                    : 'Not viewed yet';
+
+                  return (
+                    <div
+                      key={hw.analysisId}
+                      className="group rounded-2xl border border-gray-100 p-4 bg-gray-50/40 hover:bg-gray-50 transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="text-2xl p-2.5 rounded-xl bg-white border border-gray-100 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-200">
+                          {hw.subjectId === 'maths' ? '📐' : hw.subjectId === 'science' ? '🔬' : hw.subjectId === 'english' ? '📖' : hw.subjectId === 'tamil' ? 'அ' : '📝'}
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <h5 className="text-sm font-black text-gray-800 leading-snug truncate pr-2">
+                            {hw.title}
+                          </h5>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-gray-500">
+                            <span>Uploaded: <span className="text-gray-700">{uploadDate}</span></span>
+                            <span className="w-1 h-1 rounded-full bg-gray-300 hidden sm:inline" />
+                            <span>Last viewed: <span className="text-brand-purple">{lastViewedDate}</span></span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                        <Badge variant={getBadgeVariant(hw.subjectId) as any} className="text-[10px] uppercase font-extrabold px-2.5 py-0.5">
+                          {hw.subjectId}
+                        </Badge>
+                        <button
+                          type="button"
+                          onClick={() => handleResumeHomework(hw.analysisId)}
+                          className="bg-brand-orange text-white border-none py-1.5 px-4 rounded-xl text-xs font-black shadow-[0_3px_0_#C84B1E] hover:translate-y-[1px] hover:shadow-[0_2px_0_#C84B1E] active:translate-y-[3px] active:shadow-none transition-all cursor-pointer outline-none"
+                        >
+                          Resume ⚡
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-center py-6 space-y-3">
+                <div className="text-4xl">📚</div>
+                <div className="space-y-1">
+                  <div className="text-sm font-black text-gray-700">No Homework Session Yet</div>
+                  <div className="text-xs text-gray-500 font-semibold leading-relaxed max-w-xs">
+                    Your sessions history will appear here once you upload homework.
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           <div ref={studyPlanRef} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">

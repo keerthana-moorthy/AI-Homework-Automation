@@ -74,6 +74,14 @@ export interface DashboardPayload {
   selectedSubject: Subject | null;
   studyPlan: Array<{ id: string; title: string; description: string; progress: number; priority: string }>;
   lastAnalysis: JsonRecord | null;
+  recentHomework?: Array<{
+    analysisId: number;
+    title: string;
+    fileName: string | null;
+    subjectId: string;
+    createdAt: string;
+    lastViewedAt: string | null;
+  }>;
 }
 
 export interface OnboardingPayload {
@@ -233,6 +241,7 @@ export const toUserState = (user: Partial<UserState> | null | undefined): Partia
     loggedIn: user?.loggedIn,
     activeScreen: user?.activeScreen,
     selectedSubjectId: user?.selectedSubjectId ?? null,
+    activeAnalysisId: user?.activeAnalysisId ?? null,
     homeworkCompleted: user?.homeworkCompleted,
     doubtsSolved: user?.doubtsSolved,
     quizCorrect: user?.quizCorrect,

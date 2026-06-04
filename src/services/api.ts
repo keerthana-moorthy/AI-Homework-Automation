@@ -79,6 +79,8 @@ export interface DashboardPayload {
     title: string;
     fileName: string | null;
     subjectId: string;
+    subjectName: string;
+    subjectEmoji: string;
     createdAt: string;
     lastViewedAt: string | null;
   }>;

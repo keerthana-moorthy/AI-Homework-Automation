@@ -97,11 +97,15 @@ export const DashboardView: React.FC = () => {
 
   // Helper to resolve badge variants matching subject IDs
   const getBadgeVariant = (id: string) => {
-    if (id === 'science') return 'sci';
-    if (id === 'english') return 'eng';
-    if (id === 'tamil') return 'tam';
-    if (id === 'history') return 'hist';
-    if (id === 'maths') return 'math';
+    const normalized = (id ?? '').toLowerCase().trim();
+    if (normalized === 'science') return 'sci';
+    if (normalized === 'english') return 'eng';
+    if (normalized === 'tamil') return 'tam';
+    if (normalized === 'history') return 'hist';
+    if (normalized === 'maths' || normalized === 'mathematics') return 'math';
+    if (normalized === 'geography') return 'geo';
+    if (normalized === 'general_knowledge' || normalized === 'general knowledge') return 'gk';
+    if (normalized === 'other') return 'other';
     return 'default';
   };
 
@@ -226,7 +230,7 @@ export const DashboardView: React.FC = () => {
                     >
                       <div className="flex items-start gap-3 min-w-0">
                         <div className="text-2xl p-2.5 rounded-xl bg-white border border-gray-100 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-200">
-                          {hw.subjectId === 'maths' ? '📐' : hw.subjectId === 'science' ? '🔬' : hw.subjectId === 'english' ? '📖' : hw.subjectId === 'tamil' ? 'அ' : '📝'}
+                          {hw.subjectEmoji}
                         </div>
                         <div className="min-w-0 space-y-1">
                           <h5 className="text-sm font-black text-gray-800 leading-snug truncate pr-2">
@@ -241,7 +245,7 @@ export const DashboardView: React.FC = () => {
                       </div>
                       <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
                         <Badge variant={getBadgeVariant(hw.subjectId) as any} className="text-[10px] uppercase font-extrabold px-2.5 py-0.5">
-                          {hw.subjectId}
+                          {hw.subjectEmoji} {hw.subjectName}
                         </Badge>
                         <button
                           type="button"

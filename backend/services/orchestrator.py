@@ -44,10 +44,17 @@ def _analysis_payload_from_row(row: HomeworkAnalysis | None) -> dict[str, Any] |
     payload["finalAnswer"] = payload.get("finalAnswer") or row.final_answer
     payload["steps"] = payload.get("steps") or row.steps
     payload["scan"] = payload.get("scan") or {}
-    payload["detectedSubject"] = payload.get("detectedSubject") or {
-        "id": row.detected_subject_id,
-        "confidence": row.confidence,
-        "reason": "Loaded from stored analysis.",
+    
+    subject_id = row.detected_subject_id or payload.get("detectedSubject", {}).get("id") or "general_knowledge"
+    from .solver import get_subject_info
+    sub_info = get_subject_info(subject_id)
+    
+    payload["detectedSubject"] = {
+        "id": sub_info["id"],
+        "name": sub_info["name"],
+        "emoji": sub_info["emoji"],
+        "confidence": row.confidence or payload.get("detectedSubject", {}).get("confidence", 0.5),
+        "reason": payload.get("detectedSubject", {}).get("reason", "Loaded from stored analysis."),
     }
     return payload
 
@@ -175,6 +182,7 @@ class VidyaAICore:
         primary_question = question_candidates[0] if question_candidates else raw_text
         classification = document_package.get("classification") or classify_educational_content(
             text=raw_text,
+            file_name=file_name,
             structured_document_json=document_package.get("structuredDocumentJson"),
             selected_subject=subject or user.selected_subject_id,
         )

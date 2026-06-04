@@ -72,25 +72,9 @@ def _score_subject(text: str, subject_id: str) -> float:
     return (0.56 * lexical) + (0.34 * vector) + numeric_boost
 
 
-def classify_subject(text: str, selected_subject: str | None = None) -> dict[str, Any]:
-    normalized = normalize_text(text)
-    if selected_subject in SUBJECT_PROFILES:
-        return {
-            "id": selected_subject,
-            "confidence": 0.98,
-            "reason": "Selected subject was provided by the user.",
-        }
-
-    scores = {subject_id: _score_subject(normalized, subject_id) for subject_id in SUBJECT_PROFILES}
-    best_subject = max(scores, key=scores.get)
-    best_score = scores[best_subject]
-    reason = f"Matched subject profile for {best_subject}."
-    return {
-        "id": best_subject,
-        "confidence": round(min(0.99, max(0.45, best_score)), 2),
-        "reason": reason,
-        "scores": {key: round(value, 3) for key, value in scores.items()},
-    }
+def classify_subject(text: str, file_name: str | None = None, selected_subject: str | None = None) -> dict[str, Any]:
+    from .solver import detect_subject
+    return detect_subject(selected_subject, text, file_name=file_name)
 
 
 def _difficulty_score(text: str, question_count: int = 1) -> str:
@@ -137,11 +121,12 @@ def _extract_prerequisites(subject_id: str, difficulty: str) -> list[str]:
 def classify_educational_content(
     *,
     text: str,
+    file_name: str | None = None,
     structured_document_json: dict[str, Any] | None = None,
     selected_subject: str | None = None,
 ) -> dict[str, Any]:
     normalized = normalize_text(text)
-    subject = classify_subject(normalized, selected_subject)
+    subject = classify_subject(normalized, file_name=file_name, selected_subject=selected_subject)
     question_count = len((structured_document_json or {}).get("questions") or []) or 1
     detected_language = detect_script_language(normalized)
     difficulty_level = _difficulty_score(normalized, question_count=question_count)

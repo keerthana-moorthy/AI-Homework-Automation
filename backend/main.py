@@ -70,7 +70,7 @@ from .services.rag_service import get_rag_service
 from .services.planner import build_daily_plan, build_insights
 from .services.quiz_service import build_adaptive_quiz_state, get_quiz_service
 from .services.chat import answer_explanation_chat
-from .services.solver import explanation_from_analysis
+from .services.solver import explanation_from_analysis, get_subject_info
 from .websocket_manager import ConnectionManager
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -159,8 +159,9 @@ def seed_database(db: Session) -> UserProfile:
         if db.scalar(select(Subscription).where(Subscription.user_id == user.id)) is None:
             db.add(Subscription(user_id=user.id, plan_name=user.subscription_plan, status="active"))
 
-    if db.scalar(select(func.count()).select_from(Subject)) == 0:
-        for item in SUBJECTS:
+    for item in SUBJECTS:
+        subject = db.get(Subject, item["id"])
+        if subject is None:
             db.add(
                 Subject(
                     id=item["id"],
@@ -172,6 +173,12 @@ def seed_database(db: Session) -> UserProfile:
                     focus_area=item["focusArea"],
                 )
             )
+        else:
+            subject.name = item["name"]
+            subject.emoji = item["emoji"]
+            subject.color_variant = item["colorVariant"]
+            subject.color_hex = item["colorHex"]
+            db.add(subject)
 
     if db.scalar(select(func.count()).select_from(QuizQuestion)) == 0:
         for item in QUIZ_QUESTIONS:
@@ -258,6 +265,20 @@ def analysis_payload_from_row(row: HomeworkAnalysis | None) -> dict[str, Any] | 
         payload["fileType"] = row.file_type
     if row.file_path:
         payload["fileUrl"] = f"/uploads/{Path(row.file_path).name}"
+        
+    subject_id = row.detected_subject_id or payload.get("detectedSubject", {}).get("id") or "general_knowledge"
+    from .services.solver import get_subject_info
+    sub_info = get_subject_info(subject_id)
+    
+    old_subj = payload.get("detectedSubject", {})
+    confidence = row.confidence if row.confidence is not None else old_subj.get("confidence", 0.5)
+    payload["detectedSubject"] = {
+        "id": sub_info["id"],
+        "name": sub_info["name"],
+        "emoji": sub_info["emoji"],
+        "confidence": confidence,
+        "reason": old_subj.get("reason", "Loaded from stored analysis."),
+    }
     return payload
 
 
@@ -392,11 +413,15 @@ def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
 
     recent_homework = []
     for row in recent_rows:
+        subject_id = row.detected_subject_id or row.subject_id or "general_knowledge"
+        sub_info = get_subject_info(subject_id)
         recent_homework.append({
             "analysisId": row.id,
             "title": row.file_name or row.question_text or "Untitled Homework",
             "fileName": row.file_name,
-            "subjectId": row.subject_id,
+            "subjectId": sub_info["id"],
+            "subjectName": sub_info["name"],
+            "subjectEmoji": sub_info["emoji"],
             "createdAt": row.created_at.isoformat() if row.created_at else None,
             "lastViewedAt": row.last_viewed_at.isoformat() if row.last_viewed_at else None,
         })

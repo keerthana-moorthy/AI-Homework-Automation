@@ -23,7 +23,7 @@ class UserProfile(Base):
     language: Mapped[str] = mapped_column(String(10), nullable=False, default="en")
     logged_in: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     active_screen: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    selected_subject_id: Mapped[str | None] = mapped_column(String(40), nullable=True, default="maths")
+    selected_subject_id: Mapped[str | None] = mapped_column(String(40), nullable=True, default="all")
     homework_completed: Mapped[int] = mapped_column(Integer, nullable=False, default=7)
     doubts_solved: Mapped[int] = mapped_column(Integer, nullable=False, default=24)
     quiz_correct: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
@@ -229,7 +229,9 @@ class StudyPlan(Base):
     estimated_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
     summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False, default="Study Plan")
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped[UserProfile] = relationship(backref="study_plans")
 

@@ -1,45 +1,48 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { hydrateSession, setActiveScreen, setSelectedSubjectId } from '../../store/slices/appSlice';
-import { SUBJECTS, ACTION_CARDS } from '../../constants/mockData';
-import ActionCard from '../../components/common/ActionCard';
+import { hydrateSession, setActiveScreen, setSelectedSubjectId, addXp } from '../../store/slices/appSlice';
+import { SUBJECTS } from '../../constants/mockData';
 import ProgressCard from '../../components/common/ProgressCard';
 import Badge from '../../components/common/Badge';
-import { getDashboard, getQuiz, toUserState, updateScreen, updateSubject } from '../../services/api';
+import { getDashboard, getQuiz, toUserState, updateScreen, updateSubject, toggleStudyPlanTask } from '../../services/api';
+import { Calendar, BookOpen, Clock, CheckSquare, CheckCircle2, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
 
 export const DashboardView: React.FC = () => {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.app.user);
   const selectedSubjectId = useAppSelector((state) => state.app.selectedSubjectId);
-  const studyPlanRef = useRef<HTMLDivElement>(null);
   const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null);
+  const [activeTab, setActiveTab] = useState<'actions' | 'homework'>('actions');
+  const [loadingData, setLoadingData] = useState(true);
+  const [xpAnimation, setXpAnimation] = useState(false);
+  const [togglingItemId, setTogglingItemId] = useState<string | null>(null);
+  const [carryOverOpen, setCarryOverOpen] = useState(false);
+
+  const getLocalDateString = () => {
+    const date = new Date();
+    const offset = date.getTimezoneOffset();
+    const localDate = new Date(date.getTime() - (offset * 60 * 1000));
+    return localDate.toISOString().split('T')[0];
+  };
+
+  const loadDashboardData = async () => {
+    try {
+      setLoadingData(true);
+      const todayStr = getLocalDateString();
+      const response = await getDashboard(todayStr);
+      setDashboard(response);
+    } catch (error) {
+      console.error('Unable to load dashboard', error);
+    } finally {
+      setLoadingData(false);
+    }
+  };
 
   useEffect(() => {
-    let mounted = true;
-
-    const loadDashboard = async () => {
-      try {
-        const response = await getDashboard();
-        if (!mounted) return;
-        setDashboard(response);
-      } catch (error) {
-        console.error('Unable to load dashboard', error);
-      }
-    };
-
-    void loadDashboard();
-
-    return () => {
-      mounted = false;
-    };
+    void loadDashboardData();
   }, []);
 
   const handleActionClick = async (targetScreen: number) => {
-    if (targetScreen === 0) {
-      studyPlanRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      return;
-    }
-
     if (targetScreen === 4) {
       try {
         await getQuiz();
@@ -67,10 +70,71 @@ export const DashboardView: React.FC = () => {
           user: toUserState(response.user),
         })
       );
-      const refreshedDashboard = await getDashboard();
+      const todayStr = getLocalDateString();
+      const refreshedDashboard = await getDashboard(todayStr);
       setDashboard(refreshedDashboard);
     } catch (error) {
       console.error('Unable to update subject', error);
+    }
+  };
+
+  const handleTaskToggle = async (item: any) => {
+    if (!dashboard) return;
+    setTogglingItemId(item.id);
+
+    const currentCompleted = item.completed;
+    const targetCompleted = !currentCompleted;
+
+    // Update local state for immediate feedback
+    const updatedActionItems = (dashboard.todayActionItems ?? []).map((action) => {
+      if (action.id === item.id) {
+        return { ...action, completed: targetCompleted };
+      }
+      return action;
+    });
+
+    setDashboard({
+      ...dashboard,
+      todayActionItems: updatedActionItems,
+    });
+
+    // Gamified XP animation + Redux dispatch
+    if (targetCompleted) {
+      dispatch(addXp(10));
+      setXpAnimation(true);
+      setTimeout(() => setXpAnimation(false), 2000);
+    } else {
+      dispatch(addXp(-10));
+    }
+
+    try {
+      // API call to backend
+      await toggleStudyPlanTask(item.planId, item.dayNum, item.taskIndex, targetCompleted);
+      
+      // Refresh dashboard to sync all fields (e.g. progress)
+      const todayStr = getLocalDateString();
+      const refreshedDashboard = await getDashboard(todayStr);
+      setDashboard(refreshedDashboard);
+    } catch (error) {
+      console.error('Failed to toggle study plan task', error);
+      // Revert if failed
+      const revertedActionItems = (dashboard.todayActionItems ?? []).map((action) => {
+        if (action.id === item.id) {
+          return { ...action, completed: currentCompleted };
+        }
+        return action;
+      });
+      setDashboard({
+        ...dashboard,
+        todayActionItems: revertedActionItems,
+      });
+      if (targetCompleted) {
+        dispatch(addXp(-10));
+      } else {
+        dispatch(addXp(10));
+      }
+    } finally {
+      setTogglingItemId(null);
     }
   };
 
@@ -80,6 +144,7 @@ export const DashboardView: React.FC = () => {
     if (id === 'science') return 'purple';
     if (id === 'english') return 'green';
     if (id === 'tamil') return 'blue';
+    if (id === 'social') return 'orange';
     return 'orange';
   };
 
@@ -88,20 +153,44 @@ export const DashboardView: React.FC = () => {
     if (id === 'science') return 'sci';
     if (id === 'english') return 'eng';
     if (id === 'tamil') return 'tam';
-    if (id === 'history') return 'hist';
+    if (id === 'social') return 'soc';
     if (id === 'maths') return 'math';
     return 'default';
   };
 
   const dashboardSubjects = dashboard?.subjects ?? SUBJECTS;
-  const dashboardActions = dashboard?.actionCards ?? ACTION_CARDS;
   const weeklyProgress = dashboard?.weeklyProgress ?? SUBJECTS.slice(0, 3);
-  const planItems = dashboard?.studyPlan ?? [];
   const dashboardUser = dashboard?.user ?? user;
 
+  const SUBJECT_KEYWORDS: Record<string, string[]> = {
+    maths: ['math', 'algebra', 'geometry', 'arithmetic', 'number', 'equation', 'fraction', 'decimal', 'ratio', 'proportion', 'formula'],
+    science: ['science', 'physic', 'chemist', 'biolog', 'photosynthesis', 'cell', 'plant', 'leaf', 'tree', 'animal', 'organism'],
+    english: ['english', 'grammar', 'prose', 'poem', 'literature', 'comprehension', 'vocabulary', 'sentence', 'noun', 'verb'],
+    tamil: ['tamil', 'thirukkural', 'sangam', 'tamil nadu'],
+    social: ['history', 'social', 'civics', 'geography', 'empire', 'warli', 'painting', 'india', 'dynasty', 'map'],
+  };
+
+  const filteredActionItems = (dashboard?.todayActionItems ?? []).filter((item) => {
+    if (!selectedSubjectId || selectedSubjectId === 'all') return true;
+    const keywords = SUBJECT_KEYWORDS[selectedSubjectId] || [];
+    const textToSearch = `${item.title} ${item.planTitle}`.toLowerCase();
+    return keywords.some((keyword) => textToSearch.includes(keyword));
+  });
+
+  const filteredHomework = (dashboard?.todayHomework ?? []).filter((item) => {
+    if (!selectedSubjectId || selectedSubjectId === 'all') return true;
+    return item.subjectId === selectedSubjectId;
+  });
+
   return (
-    <div className="space-y-6">
-      
+    <div className="space-y-6 font-nunito relative">
+      {/* Gamified XP Reward Notification */}
+      {xpAnimation && (
+        <div className="fixed top-6 right-6 bg-brand-orange text-white px-6 py-3.5 rounded-2xl shadow-xl z-50 flex items-center gap-2 animate-[slideIn_0.3s_ease-out] font-black border-2 border-white">
+          <span>🎉</span> +10 XP Earned! Keep going!
+        </div>
+      )}
+
       {/* Welcome Banner Card */}
       <div className="bg-gradient-to-r from-brand-orange to-brand-amber rounded-3xl p-6 md:p-8 text-white relative overflow-hidden shadow-sm">
         <div className="relative z-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
@@ -130,34 +219,30 @@ export const DashboardView: React.FC = () => {
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Column: Quick Actions & Subjects */}
+        {/* Left Column: Tabbed daily items & Subjects */}
         <div className="lg:col-span-8 space-y-6">
           
-          {/* Quick Actions Grid */}
-          <div>
-            <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-3.5">
-              Quick Actions
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {dashboardActions.map((card) => (
-                <ActionCard
-                  key={card.id}
-                  emoji={card.emoji}
-                  label={card.label}
-                  subtext={card.subtext}
-                  cardType={card.cardType}
-                  onClick={() => void handleActionClick(card.targetScreen)}
-                />
-              ))}
-            </div>
-          </div>
-
           {/* Subjects Badge Bar */}
           <div>
             <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">
               Your Subjects
             </h4>
             <div className="flex gap-2.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => void handleSubjectClick('all')}
+                className="bg-transparent border-none p-0 cursor-pointer"
+              >
+                <Badge 
+                  variant="default"
+                  className={`py-1.5 px-4 text-xs font-extrabold hover:scale-105 transition-transform ${
+                    selectedSubjectId === 'all' || !selectedSubjectId ? 'ring-2 ring-brand-purple ring-offset-2 ring-offset-white font-black' : ''
+                  }`}
+                >
+                  🌐 All
+                </Badge>
+              </button>
+
               {dashboardSubjects.map((sub) => (
                 <button
                   key={sub.id}
@@ -178,80 +263,270 @@ export const DashboardView: React.FC = () => {
             </div>
           </div>
 
-          <div ref={studyPlanRef} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider">
-                Today's Study Plan
-              </h4>
+          {/* Tabbed Navigation container */}
+          <div className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+              <div className="flex bg-gray-50 border border-gray-150 p-1 rounded-2xl gap-1 shrink-0 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('actions')}
+                  className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none flex items-center justify-center gap-2 ${
+                    activeTab === 'actions'
+                      ? 'bg-brand-orange text-white shadow-sm'
+                      : 'bg-transparent text-gray-500 hover:text-brand-orange hover:bg-orange-50/40'
+                  }`}
+                >
+                  <CheckSquare className="w-4 h-4 shrink-0" />
+                  <span>Today's Action Items</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('homework')}
+                  className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none flex items-center justify-center gap-2 ${
+                    activeTab === 'homework'
+                      ? 'bg-brand-orange text-white shadow-sm'
+                      : 'bg-transparent text-gray-500 hover:text-brand-orange hover:bg-orange-50/40'
+                  }`}
+                >
+                  <BookOpen className="w-4 h-4 shrink-0" />
+                  <span>Today's Homework</span>
+                </button>
+              </div>
+
+              {/* Open Planner button */}
               <button
                 type="button"
                 onClick={() => void handleActionClick(7)}
-                className="text-xs font-bold text-brand-orange hover:underline flex items-center gap-1"
+                className="text-xs font-black text-brand-orange hover:underline flex items-center gap-1.5 self-end sm:self-center shrink-0 border-none bg-transparent cursor-pointer"
               >
-                Open Planner →
+                <span>Open Planner</span>
+                <Calendar className="w-3.5 h-3.5 shrink-0" />
               </button>
             </div>
 
-            {planItems.length > 0 ? (
-              <div className="space-y-3">
-                {planItems.slice(0, 4).map((item) => (
-                  <div key={item.id} className="rounded-2xl border border-gray-100 p-4 bg-gray-50/70">
-                    <div className="flex items-start justify-between gap-3">
+            {/* Tab content loading / data display */}
+            {loadingData ? (
+              <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                <div className="w-8 h-8 border-4 border-brand-orange border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs text-gray-500 font-extrabold select-none">Fetching daily agenda...</span>
+              </div>
+            ) : activeTab === 'actions' ? (
+              /* Tab 2: Action Items list */
+              <div className="space-y-4">
+                {/* ── Carry-Over Banner ── */}
+                {(() => {
+                  const carryItems: any[] = (dashboard as any)?.carryOverItems ?? [];
+                  if (carryItems.length === 0) return null;
+                  return (
+                    <div className="rounded-2xl border-2 border-amber-200 bg-amber-50/60 overflow-hidden">
+                      {/* Banner header – always visible */}
+                      <button
+                        type="button"
+                        onClick={() => setCarryOverOpen(o => !o)}
+                        className="w-full flex items-center justify-between gap-3 px-4 py-3 cursor-pointer bg-transparent border-none text-left"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                          <span className="text-xs font-black text-amber-700">
+                            {carryItems.length} pending task{carryItems.length > 1 ? 's' : ''} from previous day{carryItems.length > 1 ? 's' : ''}
+                          </span>
+                          <span className="text-[9px] font-black uppercase bg-amber-200 text-amber-700 px-2 py-0.5 rounded-full animate-pulse">
+                            Carry-Over
+                          </span>
+                        </div>
+                        {carryOverOpen
+                          ? <ChevronUp className="w-4 h-4 text-amber-500 shrink-0" />
+                          : <ChevronDown className="w-4 h-4 text-amber-500 shrink-0" />}
+                      </button>
+                      {/* Expandable task list */}
+                      {carryOverOpen && (
+                        <div className="px-4 pb-4 space-y-2 border-t border-amber-200">
+                          <p className="text-[10px] text-amber-600 font-semibold pt-2 pb-1">
+                            Complete these to catch up with your study plan:
+                          </p>
+                          {carryItems.map((item: any) => (
+                            <div
+                              key={item.id}
+                              className="group rounded-xl border border-amber-200 bg-white p-3 flex items-start gap-3"
+                            >
+                              {/* Checkbox */}
+                              <button
+                                type="button"
+                                onClick={() => void handleTaskToggle(item)}
+                                disabled={togglingItemId === item.id}
+                                className="w-5 h-5 rounded-md border-2 border-amber-400 bg-white flex items-center justify-center shrink-0 mt-0.5 cursor-pointer outline-none hover:border-amber-600"
+                              >
+                                {togglingItemId === item.id && (
+                                  <div className="w-2.5 h-2.5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+                                )}
+                              </button>
+                              {/* Content */}
+                              <div className="flex-1 min-w-0">
+                                <div className="text-xs font-black text-gray-800 leading-snug">{item.title}</div>
+                                <div className="flex flex-wrap items-center gap-2 mt-1">
+                                  <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-50 text-amber-700 border border-amber-200 truncate max-w-[140px]">
+                                    {item.planTitle}
+                                  </span>
+                                  {item.originalDate && (
+                                    <span className="text-[9px] font-extrabold text-gray-400 flex items-center gap-0.5">
+                                      <Calendar className="w-3 h-3 shrink-0" />
+                                      Due {item.originalDate}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+
+                {/* Today's tasks */}
+                {filteredActionItems.length > 0 ? (
+                <div className="space-y-3">
+                  {filteredActionItems.map((item) => (
+                    <div 
+                      key={item.id} 
+                      className={`group rounded-2xl border p-4 transition-all duration-200 flex items-start gap-4 hover:shadow-xs ${
+                        item.completed 
+                          ? 'border-green-100 bg-green-50/30' 
+                          : 'border-gray-100 bg-gray-50/60 hover:bg-white'
+                      }`}
+                    >
+                      {/* Checkbox button */}
+                      <button
+                        type="button"
+                        onClick={() => void handleTaskToggle(item)}
+                        disabled={togglingItemId === item.id}
+                        className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all select-none cursor-pointer outline-none ${
+                          item.completed 
+                            ? 'border-green-500 bg-green-500 text-white hover:bg-green-600' 
+                            : 'border-gray-350 bg-white hover:border-brand-orange'
+                        }`}
+                      >
+                        {item.completed ? (
+                          <CheckCircle2 className="w-4 h-4 shrink-0 text-white" strokeWidth={3} />
+                        ) : togglingItemId === item.id ? (
+                          <div className="w-2.5 h-2.5 border-2 border-brand-orange border-t-transparent rounded-full animate-spin" />
+                        ) : null}
+                      </button>
+
+                      {/* Content */}
                       <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-black leading-snug ${item.progress === 100 ? 'line-through text-gray-400' : 'text-gray-800'}`}>
+                        <div className={`text-sm font-black leading-snug transition-all ${
+                          item.completed ? 'line-through text-gray-400' : 'text-gray-800'
+                        }`}>
                           {item.title}
                         </div>
-                        <div className="text-xs text-gray-500 font-semibold mt-0.5 truncate">{item.description}</div>
+                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-orange-50 text-brand-orange border border-brand-orange/10 truncate max-w-[150px]">
+                            {item.planTitle}
+                          </span>
+                          {item.estimatedHours !== null && (
+                            <span className="text-[10px] text-gray-400 font-extrabold flex items-center gap-1">
+                              <Clock className="w-3 h-3 shrink-0" />
+                              {item.estimatedHours} {item.estimatedHours === 1 ? 'hr' : 'hrs'}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        {item.progress === 100 && (
-                          <span className="text-[10px] font-black bg-green-50 text-green-700 border border-green-200 px-2 py-0.5 rounded-full uppercase">Done ✓</span>
-                        )}
-                        <Badge
-                          variant={item.priority === 'high' ? 'orange' : item.priority === 'medium' ? 'default' : 'green'}
-                          className="shrink-0 text-[10px] font-black"
-                        >
-                          {item.priority}
-                        </Badge>
-                      </div>
+
+                      {/* Completion flag */}
+                      {item.completed && (
+                        <span className="text-[9px] font-black bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded-full uppercase shrink-0 select-none">
+                          Done
+                        </span>
+                      )}
                     </div>
-                    <div className="mt-3">
-                      <ProgressCard
-                        name={item.title}
-                        emoji={item.progress === 100 ? '✅' : '📘'}
-                        progress={item.progress}
-                        barColor={item.priority === 'high' ? 'orange' : item.priority === 'medium' ? 'purple' : 'green'}
-                      />
+                  ))}
+                </div>
+                ) : (
+                  /* Tab 2 Empty State */
+                  <div className="flex flex-col items-center justify-center text-center py-10 space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                    <div className="text-4xl">🗓️</div>
+                    <div className="space-y-1">
+                      <div className="text-sm font-black text-gray-700">No Study Activities Planned</div>
+                      <p className="text-xs text-gray-500 font-semibold leading-relaxed max-w-xs">
+                        No study activities planned for today.
+                      </p>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => void handleActionClick(7)}
+                      className="text-xs font-black text-white bg-brand-orange hover:bg-brand-orangeDark px-5 py-2.5 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer border-none"
+                    >
+                      Go to Study Plan ✨
+                    </button>
                   </div>
-                ))}
-                {planItems.length > 4 && (
-                  <button
-                    type="button"
-                    onClick={() => void handleActionClick(7)}
-                    className="w-full text-xs font-bold text-brand-orange hover:underline text-center py-1"
-                  >
-                    + {planItems.length - 4} more tasks — View full plan →
-                  </button>
                 )}
               </div>
             ) : (
-              <div className="flex flex-col items-center justify-center text-center py-6 space-y-4">
-                <div className="text-4xl">🗓️</div>
-                <div className="space-y-1">
-                  <div className="text-sm font-black text-gray-700">No Study Plan Yet</div>
-                  <div className="text-xs text-gray-500 font-semibold leading-relaxed max-w-xs">
-                    Upload your syllabus or textbook and let Vidya AI build a personalized day-by-day study schedule.
-                  </div>
+              /* Tab 1: Today's Homework list */
+              filteredHomework.length > 0 ? (
+                <div className="space-y-3">
+                  {filteredHomework.map((item) => (
+                    <div 
+                      key={item.id} 
+                      className="group rounded-2xl border border-gray-100 p-4 bg-gray-50/60 hover:bg-white hover:shadow-xs transition-all duration-200 flex items-start gap-4"
+                    >
+                      {/* Emoji container */}
+                      <div className="w-10 h-10 rounded-2xl bg-orange-50/60 border border-brand-orange/10 flex items-center justify-center text-xl shrink-0 select-none">
+                        {item.subjectEmoji ?? '📚'}
+                      </div>
+
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-black leading-snug text-gray-800 break-words">
+                          {item.title}
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2.5 mt-2">
+                          {item.subjectName && (
+                            <Badge 
+                              variant={getBadgeVariant(item.subjectId ?? 'maths') as any}
+                              className="text-[10px] font-black shrink-0"
+                            >
+                              {item.subjectName}
+                            </Badge>
+                          )}
+                          <span className="text-[10px] text-gray-400 font-extrabold flex items-center gap-1">
+                            <Clock className="w-3 h-3 shrink-0" />
+                            Due: {item.dueDate}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Status flag */}
+                      <span className={`text-[9px] font-black border px-2 py-0.5 rounded-full uppercase shrink-0 select-none ${
+                        item.status === 'Completed'
+                          ? 'bg-green-50 text-green-700 border-green-200'
+                          : 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
+                      }`}>
+                        {item.status}
+                      </span>
+                    </div>
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void handleActionClick(7)}
-                  className="text-xs font-black text-white bg-brand-orange hover:bg-brand-orangeDark px-5 py-2.5 rounded-xl transition-all shadow-sm active:scale-95"
-                >
-                  Create My Study Plan ✨
-                </button>
-              </div>
+              ) : (
+                /* Tab 1 Empty State */
+                <div className="flex flex-col items-center justify-center text-center py-10 space-y-4 animate-[fadeIn_0.2s_ease-out]">
+                  <div className="text-4xl">📚</div>
+                  <div className="space-y-1">
+                    <div className="text-sm font-black text-gray-700">No Homework Scheduled</div>
+                    <p className="text-xs text-gray-500 font-semibold leading-relaxed max-w-xs">
+                      No homework scheduled for today.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => void handleActionClick(2)}
+                    className="text-xs font-black text-white bg-brand-orange hover:bg-brand-orangeDark px-5 py-2.5 rounded-xl transition-all shadow-sm active:scale-95 cursor-pointer border-none"
+                  >
+                    Scan New Homework 📸
+                  </button>
+                </div>
+              )
             )}
           </div>
 

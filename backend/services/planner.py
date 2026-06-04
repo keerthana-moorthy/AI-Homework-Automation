@@ -8,6 +8,35 @@ from ..models import StudyPlan
 from ..constants import SUBJECTS
 
 
+# Possible return values:
+#   "completed"   – all tasks done
+#   "in_progress" – today's day, some tasks done
+#   "not_started" – today's day, no tasks done
+#   "partial"     – past day, some (not all) tasks done
+#   "missed"      – past day, zero tasks done
+#   "upcoming"    – future day
+def compute_day_status(day: dict[str, Any], today_str: str) -> str:
+    day_date = day.get("date", "")
+    tasks: list[dict] = day.get("tasks", [])
+    total = len(tasks)
+    if total == 0:
+        return "upcoming" if day_date > today_str else "not_started"
+
+    completed_count = sum(1 for t in tasks if t.get("completed", False))
+
+    if completed_count == total:
+        return "completed"
+
+    if day_date > today_str:
+        return "upcoming"
+
+    if day_date == today_str:
+        return "in_progress" if completed_count > 0 else "not_started"
+
+    # Past day
+    return "partial" if completed_count > 0 else "missed"
+
+
 def build_daily_plan(db: Session, user: Any, selected_subject_id: str | None, last_analysis: dict[str, Any] | None) -> list[dict[str, Any]]:
     # Query the latest StudyPlan for the user
     latest_plan = db.scalar(

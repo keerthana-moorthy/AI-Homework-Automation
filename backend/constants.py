@@ -67,13 +67,13 @@ SUBJECTS = [
         "focusArea": "Vocabulary and writing",
     },
     {
-        "id": "history",
-        "name": "History",
+        "id": "social",
+        "name": "Social",
         "emoji": "📅",
         "progress": 40,
         "colorVariant": "blue",
         "colorHex": "#F57F17",
-        "focusArea": "Timelines and important events",
+        "focusArea": "Timelines, geography, and civics",
     },
 ]
 

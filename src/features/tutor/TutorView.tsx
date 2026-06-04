@@ -238,8 +238,8 @@ export const TutorView: React.FC = () => {
       case 'General Knowledge':
         void handleSendMessage('Tell me a fun General Knowledge fact.');
         break;
-      case 'History':
-        void handleSendMessage('Tell me an interesting event from History.');
+      case 'Social':
+        void handleSendMessage('Tell me an interesting topic in Social Studies.');
         break;
       case 'Geography':
         void handleSendMessage('What is an amazing fact about Geography?');
@@ -255,7 +255,7 @@ export const TutorView: React.FC = () => {
     'Mathematics',
     'English',
     'General Knowledge',
-    'History',
+    'Social',
     'Geography',
   ];
 

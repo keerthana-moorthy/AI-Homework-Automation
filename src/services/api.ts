@@ -78,6 +78,16 @@ export interface DashboardPayload {
   todayActionItems?: TodayActionItem[];
   carryOverItems?: TodayActionItem[];
   carryOverCount?: number;
+  recentHomework?: Array<{
+    analysisId: number;
+    title: string;
+    fileName: string | null;
+    subjectId: string;
+    subjectName: string;
+    subjectEmoji: string;
+    createdAt: string;
+    lastViewedAt: string | null;
+  }>;
 }
 
 
@@ -238,6 +248,7 @@ export const toUserState = (user: Partial<UserState> | null | undefined): Partia
     loggedIn: user?.loggedIn,
     activeScreen: user?.activeScreen,
     selectedSubjectId: user?.selectedSubjectId ?? null,
+    activeAnalysisId: user?.activeAnalysisId ?? null,
     homeworkCompleted: user?.homeworkCompleted,
     doubtsSolved: user?.doubtsSolved,
     quizCorrect: user?.quizCorrect,

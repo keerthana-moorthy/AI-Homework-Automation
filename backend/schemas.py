@@ -48,6 +48,7 @@ class UserOut(CamelModel):
     quiz_status: str
     quiz_xp_earned_this_session: int
     subscription_plan: str
+    active_analysis_id: int | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -305,8 +306,7 @@ class DashboardOut(CamelModel):
     today_homework: list[TodayHomeworkItem] = Field(default_factory=list)
     today_action_items: list[TodayActionItem] = Field(default_factory=list)
     carry_over_count: int = 0
-
-
+    recent_homework: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class OnboardingOut(CamelModel):

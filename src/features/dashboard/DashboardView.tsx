@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { hydrateSession, setActiveScreen, setSelectedSubjectId, addXp } from '../../store/slices/appSlice';
+import { hydrateSession, setActiveScreen, setSelectedSubjectId, addXp, setUser } from '../../store/slices/appSlice';
 import { SUBJECTS } from '../../constants/mockData';
 import ProgressCard from '../../components/common/ProgressCard';
 import Badge from '../../components/common/Badge';
@@ -85,54 +85,50 @@ export const DashboardView: React.FC = () => {
     const currentCompleted = item.completed;
     const targetCompleted = !currentCompleted;
 
-    // Update local state for immediate feedback
+    // Snapshot current XP for potential revert
+    const prevXp = user?.xpPoints ?? 0;
+    const prevLevel = user?.level ?? 'Bronze';
+
+    // Optimistic local state update
     const updatedActionItems = (dashboard.todayActionItems ?? []).map((action) => {
       if (action.id === item.id) {
         return { ...action, completed: targetCompleted };
       }
       return action;
     });
+    setDashboard({ ...dashboard, todayActionItems: updatedActionItems });
 
-    setDashboard({
-      ...dashboard,
-      todayActionItems: updatedActionItems,
-    });
-
-    // Gamified XP animation + Redux dispatch
+    // Optimistic XP animation only (no Redux dispatch yet — server is authoritative)
     if (targetCompleted) {
-      dispatch(addXp(10));
       setXpAnimation(true);
       setTimeout(() => setXpAnimation(false), 2000);
-    } else {
-      dispatch(addXp(-10));
     }
 
     try {
-      // API call to backend
-      await toggleStudyPlanTask(item.planId, item.dayNum, item.taskIndex, targetCompleted);
-      
-      // Refresh dashboard to sync all fields (e.g. progress)
+      // API call — backend persists XP and returns updated xpPoints + level
+      const response = await toggleStudyPlanTask(item.planId, item.dayNum, item.taskIndex, targetCompleted) as any;
+
+      // Sync Redux with server-authoritative XP so it survives refresh
+      if (typeof response?.xpPoints === 'number') {
+        dispatch(setUser({ xpPoints: response.xpPoints, level: response.level }));
+      }
+
+      // Refresh dashboard to sync all fields (e.g. progress, carry-over)
       const todayStr = getLocalDateString();
       const refreshedDashboard = await getDashboard(todayStr);
       setDashboard(refreshedDashboard);
     } catch (error) {
       console.error('Failed to toggle study plan task', error);
-      // Revert if failed
+      // Revert local state
       const revertedActionItems = (dashboard.todayActionItems ?? []).map((action) => {
         if (action.id === item.id) {
           return { ...action, completed: currentCompleted };
         }
         return action;
       });
-      setDashboard({
-        ...dashboard,
-        todayActionItems: revertedActionItems,
-      });
-      if (targetCompleted) {
-        dispatch(addXp(-10));
-      } else {
-        dispatch(addXp(10));
-      }
+      setDashboard({ ...dashboard, todayActionItems: revertedActionItems });
+      // Revert XP to pre-toggle value
+      dispatch(setUser({ xpPoints: prevXp, level: prevLevel }));
     } finally {
       setTogglingItemId(null);
     }

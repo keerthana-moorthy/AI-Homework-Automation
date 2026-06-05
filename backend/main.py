@@ -2153,7 +2153,7 @@ async def generate_study_plan(payload: StudyPlanGenerateRequest, db: Session = D
     )
 
 
-@app.post("/api/studyplan/{plan_id}/toggle", response_model=StudyPlanOut)
+@app.post("/api/studyplan/{plan_id}/toggle")
 def toggle_study_plan_task(plan_id: int, payload: StudyPlanTaskToggleRequest, db: Session = Depends(get_db)) -> Any:
     user = get_primary_user(db)
     row = db.get(StudyPlan, plan_id)
@@ -2178,6 +2178,16 @@ def toggle_study_plan_task(plan_id: int, payload: StudyPlanTaskToggleRequest, db
 
     tasks[payload.task_index]["completed"] = payload.completed
 
+    # ── Persist XP to the user record ──────────────────────────────────────
+    XP_PER_TASK = 10
+    if payload.completed:
+        user.xp_points = (user.xp_points or 0) + XP_PER_TASK
+    else:
+        user.xp_points = max(0, (user.xp_points or 0) - XP_PER_TASK)
+    user.level = level_for_xp(user.xp_points)
+    db.add(user)
+    # ────────────────────────────────────────────────────────────────────────
+
     total_tasks = 0
     completed_tasks = 0
     for day in plan_data:
@@ -2195,7 +2205,7 @@ def toggle_study_plan_task(plan_id: int, payload: StudyPlanTaskToggleRequest, db
     db.refresh(row)
 
     file_url = f"/uploads/{row.file_path}" if row.file_path else None
-    return StudyPlanOut(
+    plan_out = StudyPlanOut(
         id=row.id,
         title=row.title if getattr(row, "title", None) else "Study Plan",
         start_date=row.start_date,
@@ -2213,6 +2223,12 @@ def toggle_study_plan_task(plan_id: int, payload: StudyPlanTaskToggleRequest, db
         created_at=row.created_at,
         updated_at=row.updated_at if getattr(row, "updated_at", None) else row.created_at,
     )
+    # Include updated user XP/level so the frontend can sync Redux without a separate call
+    result = plan_out.model_dump(by_alias=True, exclude_none=True)
+    result["xpPoints"] = user.xp_points
+    result["level"] = user.level
+    return result
+
 
 
 if __name__ == "__main__":

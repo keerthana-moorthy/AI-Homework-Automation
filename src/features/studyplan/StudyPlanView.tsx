@@ -250,50 +250,52 @@ export const StudyPlanView: React.FC = () => {
 
   const handleTaskToggle = async (dayNum: number, taskIndex: number, currentCompleted: boolean) => {
     if (!studyPlan) return;
-    
+
+    // Snapshot current XP for potential revert
+    const prevXp = user?.xpPoints ?? 0;
+    const prevLevel = user?.level ?? 'Bronze';
+
     // Deep copy for React state update detection
     const updatedPlan = JSON.parse(JSON.stringify(studyPlan));
     const day = updatedPlan.planData.find((d: any) => d.dayNum === dayNum);
     if (!day) return;
-    
+
     day.tasks[taskIndex].completed = !currentCompleted;
-    
+
     // Recalculate progress locally for instant feedback
     const totalTasks = updatedPlan.planData.reduce((acc: number, d: any) => acc + d.tasks.length, 0);
-    const completedTasks = updatedPlan.planData.reduce((acc: number, d: any) => 
+    const completedTasks = updatedPlan.planData.reduce((acc: number, d: any) =>
       acc + d.tasks.filter((t: any) => t.completed).length, 0
     );
     updatedPlan.progress = Math.round((completedTasks / Math.max(1, totalTasks)) * 100);
     setStudyPlan(updatedPlan);
 
-    // Gamified reward: Add XP on completion, deduct on uncompletion
+    // Optimistic XP animation (Redux update comes from server response)
     if (!currentCompleted) {
-      dispatch(addXp(10));
       setXpAnimation(true);
       setTimeout(() => setXpAnimation(false), 2000);
-    } else {
-      dispatch(addXp(-10));
     }
 
     try {
-      // Sync with server
-      const syncedPlan = await toggleStudyPlanTask(studyPlan.id, dayNum, taskIndex, !currentCompleted);
-      setStudyPlan(syncedPlan);
+      // Sync with server — backend persists XP and returns updated xpPoints + level
+      const response = await toggleStudyPlanTask(studyPlan.id, dayNum, taskIndex, !currentCompleted) as any;
+      setStudyPlan(response);
+
+      // Sync Redux with server-authoritative XP so it survives refresh
+      if (typeof response?.xpPoints === 'number') {
+        dispatch(setUser({ xpPoints: response.xpPoints, level: response.level }));
+      }
     } catch (err) {
       console.error('Error syncing task toggle', err);
-      // Revert if API failed
+      // Revert local plan state
       const revertedPlan = JSON.parse(JSON.stringify(studyPlan));
       const revertedDay = revertedPlan.planData.find((d: any) => d.dayNum === dayNum);
       if (revertedDay) {
         revertedDay.tasks[taskIndex].completed = currentCompleted;
       }
       setStudyPlan(revertedPlan);
-      // Revert XP change
-      if (!currentCompleted) {
-        dispatch(addXp(-10));
-      } else {
-        dispatch(addXp(10));
-      }
+      // Revert XP to pre-toggle value
+      dispatch(setUser({ xpPoints: prevXp, level: prevLevel }));
     }
   };
 

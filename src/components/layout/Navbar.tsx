@@ -145,18 +145,24 @@ export const Navbar: React.FC<NavbarProps> = ({ onMenuClick }) => {
   const xpPct = Math.min(100, Math.max(0, Math.round((xpInLevel / xpRange) * 100)));
   const xpToNext = Math.max(0, lvlCfg.maxXp - user.xpPoints);
   const isMaxLevel = level === 'Platinum';
-
   const getScreenTitle = () => {
     switch (activeScreen) {
-      case 0:  return 'Student Dashboard';
-      case 2:  return 'Scan Homework';
-      case 3:  return 'Step-by-Step Explanation';
-      case 4:  return 'Daily Practice Quiz';
-      case 5:  return 'Parent Monitoring Portal';
-      case 6:  return 'Vidya AI Tutor';
-      case 1:  return 'Vidya AI Intro Tour';
-      case 7:  return 'Study Plan';
-      default: return 'Vidya Homework Assistant';
+      case 0:
+        return 'Student Dashboard';
+      case 2:
+        return 'Scan Homework';
+      case 3:
+        return 'Step-by-Step Explanation';
+      case 4:
+        return 'Daily Practice Quiz';
+      case 5:
+        return 'My Progress';
+      case 6:
+        return 'Vidya AI Tutor';
+      case 7:
+        return 'Study Plan';
+      default:
+        return 'Vidya Homework Assistant';
     }
   };
 

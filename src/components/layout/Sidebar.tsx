@@ -6,7 +6,7 @@ import {
   Camera, 
   BrainCircuit, 
   Zap, 
-  Users, 
+  TrendingUp, 
   HelpCircle, 
   LogOut,
   MessageSquare,
@@ -30,8 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
     { name: 'AI Tutor', icon: MessageSquare, screen: 6 },
     { name: 'Study Plan', icon: Calendar, screen: 7 },
     { name: 'Daily Quiz', icon: Zap, screen: 4 },
-    { name: 'Parent View', icon: Users, screen: 5 },
-    { name: 'Intro Tour', icon: HelpCircle, screen: 1 },
+    { name: 'My Progress', icon: TrendingUp, screen: 5 },
   ];
 
   const handleNav = (screen: number) => {

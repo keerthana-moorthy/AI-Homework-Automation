@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import re
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -11,6 +12,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from sqlalchemy import desc, func, select
 from sqlalchemy.orm import Session
 
@@ -451,29 +453,8 @@ def build_dashboard_payload(db: Session, user: UserProfile) -> dict[str, Any]:
 
 
 def build_parent_payload(db: Session, user: UserProfile) -> dict[str, Any]:
-    insights = build_insights(user)
-    stats = [
-        {"id": "streak", "value": str(user.streak), "label": "Day Streak", "colorHex": "#FF6B35"},
-        {"id": "xp", "value": str(user.xp_points), "label": "Total XP", "colorHex": "#7B5EA7"},
-        {"id": "completed", "value": str(user.homework_completed), "label": "HW Completed", "colorHex": "#4CAF50"},
-        {"id": "doubts", "value": str(user.doubts_solved), "label": "Doubts Solved", "colorHex": "#2196F3"},
-    ]
-    recommendations = latest_analysis_payload(db, user).get("recommendations") if latest_analysis_payload(db, user) else PARENT_RECOMMENDATIONS
-    parent = ParentOut(
-        app=AppInfo(
-            name=APP_INFO["name"],
-            description=APP_INFO["description"],
-            version=APP_INFO["version"],
-            default_language=APP_INFO["defaultLanguage"],
-            supported_languages=APP_INFO["supportedLanguages"],
-        ),
-        user=user,
-        stats=stats,
-        performance_bars=PERFORMANCE_BARS,
-        recommendations=recommendations or PARENT_RECOMMENDATIONS,
-        insights=insights,
-    )
-    return parent.model_dump(by_alias=True, exclude_none=True)
+    from .services.report_generator import get_progress_data
+    return get_progress_data(db, user, None)
 
 
 def build_explanation_payload(db: Session, user: UserProfile, analysis_id: int | None = None) -> dict[str, Any]:
@@ -1214,21 +1195,67 @@ async def quiz_reset(db: Session = Depends(get_db)) -> dict[str, Any]:
 
 
 @app.get("/api/parent")
-def parent(db: Session = Depends(get_db)) -> dict[str, Any]:
+def parent(
+    filter: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    db: Session = Depends(get_db)
+) -> dict[str, Any]:
     user = get_primary_user(db)
-    return {"ok": True, **build_parent_payload(db, user)}
+    from .services.report_generator import get_progress_data
+    return {"ok": True, **get_progress_data(db, user, filter, start_date, end_date)}
 
 
 @app.get("/api/parent/report")
-def parent_report(db: Session = Depends(get_db)) -> dict[str, Any]:
+def parent_report(
+    filter: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    db: Session = Depends(get_db)
+) -> dict[str, Any]:
     user = get_primary_user(db)
+    from .services.report_generator import get_progress_data
     return {
         "ok": True,
         "report": {
-            "parent": build_parent_payload(db, user),
+            "parent": get_progress_data(db, user, filter, start_date, end_date),
             "analytics": build_analytics_payload(db, user),
         },
     }
+
+
+@app.get("/api/parent/report/pdf")
+def download_pdf_report(
+    filter: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    db: Session = Depends(get_db)
+):
+    user = get_primary_user(db)
+    from .services.report_generator import generate_pdf_report
+    pdf_bytes = generate_pdf_report(db, user, filter, start_date, end_date)
+    return StreamingResponse(
+        io.BytesIO(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=Student_Progress_Report.pdf"}
+    )
+
+
+@app.get("/api/parent/report/excel")
+def download_excel_report(
+    filter: str | None = Query(None),
+    start_date: str | None = Query(None),
+    end_date: str | None = Query(None),
+    db: Session = Depends(get_db)
+):
+    user = get_primary_user(db)
+    from .services.report_generator import generate_excel_report
+    excel_bytes = generate_excel_report(db, user, filter, start_date, end_date)
+    return StreamingResponse(
+        io.BytesIO(excel_bytes),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=Student_Progress_Report.xlsx"}
+    )
 
 
 @app.get("/api/recommendations")

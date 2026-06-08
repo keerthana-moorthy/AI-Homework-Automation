@@ -166,9 +166,11 @@ export interface ParentPayload {
   app: AppInfoPayload;
   user: UserState;
   stats: ParentStat[];
-  performanceBars: Array<{ subject: string; progress: number; color: 'orange' | 'purple' | 'green' | 'blue' }>;
+  performanceBars: Array<{ id: string; name: string; emoji: string; progress: number; color: string; trend: string }>;
   recommendations: Recommendation[];
   insights: JsonRecord;
+  achievements: Array<{ id: string; name: string; description: string; unlocked: boolean; emoji: string; earnedDate: string | null }>;
+  weeklyActivity: Array<{ label: string; date: string; homework: number; quizzes: number; tutorSessions: number; doubts: number; studyTime: number }>;
 }
 
 export interface HomeworkAnalyzePayload {
@@ -325,8 +327,42 @@ export const analyzeHomework = (payload: HomeworkAnalyzePayload) =>
     body: JSON.stringify(payload),
   });
 
-export const getParent = () => request<ParentPayload>('/api/parent');
-export const getParentReport = () => request<JsonRecord>('/api/parent/report');
+export const getParent = (filter?: string, startDate?: string, endDate?: string) => {
+  const params = new URLSearchParams();
+  if (filter) params.append('filter', filter);
+  if (startDate) params.append('start_date', startDate);
+  if (endDate) params.append('end_date', endDate);
+  const queryString = params.toString();
+  return request<ParentPayload>(`/api/parent${queryString ? `?${queryString}` : ''}`);
+};
+
+export const getParentReport = (filter?: string, startDate?: string, endDate?: string) => {
+  const params = new URLSearchParams();
+  if (filter) params.append('filter', filter);
+  if (startDate) params.append('start_date', startDate);
+  if (endDate) params.append('end_date', endDate);
+  const queryString = params.toString();
+  return request<JsonRecord>(`/api/parent/report${queryString ? `?${queryString}` : ''}`);
+};
+
+export const resolveProgressReportPdfUrl = (filter?: string, startDate?: string, endDate?: string) => {
+  const params = new URLSearchParams();
+  if (filter) params.append('filter', filter);
+  if (startDate) params.append('start_date', startDate);
+  if (endDate) params.append('end_date', endDate);
+  const queryString = params.toString();
+  return resolveBackendUrl(`/api/parent/report/pdf${queryString ? `?${queryString}` : ''}`);
+};
+
+export const resolveProgressReportExcelUrl = (filter?: string, startDate?: string, endDate?: string) => {
+  const params = new URLSearchParams();
+  if (filter) params.append('filter', filter);
+  if (startDate) params.append('start_date', startDate);
+  if (endDate) params.append('end_date', endDate);
+  const queryString = params.toString();
+  return resolveBackendUrl(`/api/parent/report/excel${queryString ? `?${queryString}` : ''}`);
+};
+
 export const getPlannerToday = () => request<JsonRecord>('/api/planner/today');
 export const getAnalyticsSummary = () => request<JsonRecord>('/api/analytics/summary');
 export const getSubscription = () => request<JsonRecord>('/api/subscription');

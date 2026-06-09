@@ -235,6 +235,7 @@ export interface QuizAnswerResponse {
     selectedOption: string;
     xpAwarded: number;
     toastMessage: string;
+    explanation?: string;
   };
 }
 

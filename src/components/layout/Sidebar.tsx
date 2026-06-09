@@ -4,7 +4,6 @@ import { hydrateSession, setActiveScreen } from '../../store/slices/appSlice';
 import { 
   Home, 
   Camera, 
-  BrainCircuit, 
   Zap, 
   TrendingUp, 
   HelpCircle, 

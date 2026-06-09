@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { setActiveScreen, addXp, setUser } from '../../store/slices/appSlice';
+import { setActiveScreen, setUser } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import FormUploadZone from '../../components/form/FormUploadZone';
 import AIResponseRenderer from '../../components/common/AIResponseRenderer';
@@ -26,6 +26,10 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText, 
+<<<<<<< Updated upstream
+=======
+  BookOpen, 
+>>>>>>> Stashed changes
   Trophy, 
   RefreshCw,
   Clock
@@ -50,7 +54,6 @@ export const StudyPlanView: React.FC = () => {
   const [historyPlans, setHistoryPlans] = useState<StudyPlan[]>([]);
   const [historyLimit, setHistoryLimit] = useState<number>(3);
   const [historyUsed, setHistoryUsed] = useState<number>(0);
-  const [historyRemaining, setHistoryRemaining] = useState<number>(3);
   const [renamingPlanId, setRenamingPlanId] = useState<number | null>(null);
   const [renameTitle, setRenameTitle] = useState('');
   const [deletingPlanId, setDeletingPlanId] = useState<number | null>(null);
@@ -98,7 +101,6 @@ export const StudyPlanView: React.FC = () => {
       setHistoryPlans(historyData.plans);
       setHistoryLimit(historyData.limit);
       setHistoryUsed(historyData.used);
-      setHistoryRemaining(historyData.remaining);
     } catch (err) {
       console.error('Failed to load study plan history', err);
     }
@@ -173,7 +175,6 @@ export const StudyPlanView: React.FC = () => {
           setHistoryPlans(historyData.plans);
           setHistoryLimit(historyData.limit);
           setHistoryUsed(historyData.used);
-          setHistoryRemaining(historyData.remaining);
         }
       } catch (err) {
         console.error('Failed to load study plan data', err);
@@ -1091,7 +1092,7 @@ export const StudyPlanView: React.FC = () => {
                 <div className="space-y-4 pr-1 mt-4">
                   {studyPlan.planData.map((day) => {
                     const isExpanded = expandedDay === day.dayNum;
-                    const { total, completed, allDone, status } = getDayStatus(day);
+                    const { total, completed, status } = getDayStatus(day);
 
                     return (
                       <div

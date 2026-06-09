@@ -127,10 +127,14 @@ export const ExplanationView: React.FC = () => {
           <Button variant="back" onClick={() => void handleNavigate(2)} />
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
+<<<<<<< Updated upstream
               <Badge variant={subjectVariant as any}>
                 {explanation?.subject?.emoji ? `${explanation.subject.emoji} ` : ''}
                 {(explanation?.subject?.name as string) ?? 'Homework'}
               </Badge>
+=======
+              <Badge variant={subjectVariant as any}>{(explanation?.subject?.name as string) ?? 'Homework'}</Badge>
+>>>>>>> Stashed changes
               <Badge variant="white">{scanLabel}</Badge>
               {explanation?.pageCount ? <Badge variant="white">{explanation.pageCount} page(s)</Badge> : null}
             </div>

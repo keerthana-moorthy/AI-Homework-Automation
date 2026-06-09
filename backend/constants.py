@@ -102,6 +102,33 @@ SUBJECTS = [
         "colorHex": "#9E9E9E",
         "focusArea": "Uncategorized study topics",
     },
+    {
+        "id": "geography",
+        "name": "Geography",
+        "emoji": "🌍",
+        "progress": 30,
+        "colorVariant": "blue",
+        "colorHex": "#00BCD4",
+        "focusArea": "Maps and locations",
+    },
+    {
+        "id": "general_knowledge",
+        "name": "General Knowledge",
+        "emoji": "📚",
+        "progress": 50,
+        "colorVariant": "orange",
+        "colorHex": "#FF9800",
+        "focusArea": "General topics and facts",
+    },
+    {
+        "id": "other",
+        "name": "Other",
+        "emoji": "📚",
+        "progress": 0,
+        "colorVariant": "gray",
+        "colorHex": "#9E9E9E",
+        "focusArea": "Uncategorized study topics",
+    },
 ]
 
 ACTION_CARDS = [

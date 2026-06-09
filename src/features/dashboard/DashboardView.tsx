@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { hydrateSession, setActiveScreen, setSelectedSubjectId, addXp, setUser } from '../../store/slices/appSlice';
+import { hydrateSession, setActiveScreen, setSelectedSubjectId, setUser } from '../../store/slices/appSlice';
 import { SUBJECTS } from '../../constants/mockData';
 import ProgressCard from '../../components/common/ProgressCard';
 import Badge from '../../components/common/Badge';
@@ -11,6 +11,7 @@ export const DashboardView: React.FC = () => {
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.app.user);
   const selectedSubjectId = useAppSelector((state) => state.app.selectedSubjectId);
+  const studyPlanRef = useRef<HTMLDivElement>(null);
   const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null);
   const [activeTab, setActiveTab] = useState<'actions' | 'homework'>('actions');
   const [loadingData, setLoadingData] = useState(true);
@@ -43,6 +44,11 @@ export const DashboardView: React.FC = () => {
   }, []);
 
   const handleActionClick = async (targetScreen: number) => {
+    if (targetScreen === 0) {
+      studyPlanRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+
     if (targetScreen === 4) {
       try {
         await getQuiz();
@@ -233,10 +239,10 @@ export const DashboardView: React.FC = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        
+
         {/* Left Column: Tabbed daily items & Subjects */}
         <div className="lg:col-span-8 space-y-6">
-          
+
           {/* Subjects Badge Bar */}
           <div>
             <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider mb-3">
@@ -248,11 +254,10 @@ export const DashboardView: React.FC = () => {
                 onClick={() => void handleSubjectClick('all')}
                 className="bg-transparent border-none p-0 cursor-pointer"
               >
-                <Badge 
+                <Badge
                   variant="default"
-                  className={`py-1.5 px-4 text-xs font-extrabold hover:scale-105 transition-transform ${
-                    selectedSubjectId === 'all' || !selectedSubjectId ? 'ring-2 ring-brand-purple ring-offset-2 ring-offset-white font-black' : ''
-                  }`}
+                  className={`py-1.5 px-4 text-xs font-extrabold hover:scale-105 transition-transform ${selectedSubjectId === 'all' || !selectedSubjectId ? 'ring-2 ring-brand-purple ring-offset-2 ring-offset-white font-black' : ''
+                    }`}
                 >
                   🌐 All
                 </Badge>
@@ -265,11 +270,10 @@ export const DashboardView: React.FC = () => {
                   onClick={() => void handleSubjectClick(sub.id)}
                   className="bg-transparent border-none p-0 cursor-pointer"
                 >
-                  <Badge 
+                  <Badge
                     variant={getBadgeVariant(sub.id) as any}
-                    className={`py-1.5 px-4 text-xs font-extrabold hover:scale-105 transition-transform ${
-                      selectedSubjectId === sub.id ? 'ring-2 ring-brand-purple ring-offset-2 ring-offset-white' : ''
-                    }`}
+                    className={`py-1.5 px-4 text-xs font-extrabold hover:scale-105 transition-transform ${selectedSubjectId === sub.id ? 'ring-2 ring-brand-purple ring-offset-2 ring-offset-white' : ''
+                      }`}
                   >
                     {sub.emoji} {sub.name}
                   </Badge>
@@ -299,12 +303,89 @@ export const DashboardView: React.FC = () => {
                   });
                   const lastViewedDate = hw.lastViewedAt
                     ? new Date(hw.lastViewedAt).toLocaleDateString(undefined, {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                    : 'Not viewed yet';
+
+                  return (
+                    <div
+                      key={hw.analysisId}
+                      className="group rounded-2xl border border-gray-100 p-4 bg-gray-50/40 hover:bg-gray-50 transition-all duration-200 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="text-2xl p-2.5 rounded-xl bg-white border border-gray-100 shrink-0 shadow-sm group-hover:scale-105 transition-transform duration-200">
+                          {hw.subjectEmoji}
+                        </div>
+                        <div className="min-w-0 space-y-1">
+                          <h5 className="text-sm font-black text-gray-800 leading-snug truncate pr-2">
+                            {hw.title}
+                          </h5>
+                          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-bold text-gray-500">
+                            <span>Uploaded: <span className="text-gray-700">{uploadDate}</span></span>
+                            <span className="w-1 h-1 rounded-full bg-gray-300 hidden sm:inline" />
+                            <span>Last viewed: <span className="text-brand-purple">{lastViewedDate}</span></span>
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
+                        <Badge variant={getBadgeVariant(hw.subjectId) as any} className="text-[10px] uppercase font-extrabold px-2.5 py-0.5">
+                          {hw.subjectEmoji} {hw.subjectName}
+                        </Badge>
+                        <button
+                          type="button"
+                          onClick={() => handleResumeHomework(hw.analysisId)}
+                          className="bg-brand-orange text-white border-none py-1.5 px-4 rounded-xl text-xs font-black shadow-[0_3px_0_#C84B1E] hover:translate-y-[1px] hover:shadow-[0_2px_0_#C84B1E] active:translate-y-[3px] active:shadow-none transition-all cursor-pointer outline-none"
+                        >
+                          Resume ⚡
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-center py-6 space-y-3">
+                <div className="text-4xl">📚</div>
+                <div className="space-y-1">
+                  <div className="text-sm font-black text-gray-700">No Homework Session Yet</div>
+                  <div className="text-xs text-gray-500 font-semibold leading-relaxed max-w-xs">
+                    Your sessions history will appear here once you upload homework.
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div ref={studyPlanRef} className="bg-white rounded-3xl p-6 border border-gray-100 shadow-sm space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider">
+                Recent Homework
+              </h4>
+              <span className="text-[10px] font-black bg-brand-purpleLight text-brand-purple px-2 py-0.5 rounded-full uppercase">
+                History
+              </span>
+            </div>
+
+            {dashboard?.recentHomework && dashboard.recentHomework.length > 0 ? (
+              <div className="space-y-3">
+                {dashboard.recentHomework.map((hw) => {
+                  const uploadDate = new Date(hw.createdAt).toLocaleDateString(undefined, {
+                    month: 'short',
+                    day: 'numeric',
+                    year: 'numeric',
+                  });
+                  const lastViewedDate = hw.lastViewedAt
+                    ? new Date(hw.lastViewedAt).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
                     : 'Not viewed yet';
 
                   return (
@@ -363,11 +444,10 @@ export const DashboardView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveTab('actions')}
-                  className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none flex items-center justify-center gap-2 ${
-                    activeTab === 'actions'
-                      ? 'bg-brand-orange text-white shadow-sm'
-                      : 'bg-transparent text-gray-500 hover:text-brand-orange hover:bg-orange-50/40'
-                  }`}
+                  className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none flex items-center justify-center gap-2 ${activeTab === 'actions'
+                    ? 'bg-brand-orange text-white shadow-sm'
+                    : 'bg-transparent text-gray-500 hover:text-brand-orange hover:bg-orange-50/40'
+                    }`}
                 >
                   <CheckSquare className="w-4 h-4 shrink-0" />
                   <span>Today's Action Items</span>
@@ -375,11 +455,10 @@ export const DashboardView: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setActiveTab('homework')}
-                  className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none flex items-center justify-center gap-2 ${
-                    activeTab === 'homework'
-                      ? 'bg-brand-orange text-white shadow-sm'
-                      : 'bg-transparent text-gray-500 hover:text-brand-orange hover:bg-orange-50/40'
-                  }`}
+                  className={`flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none flex items-center justify-center gap-2 ${activeTab === 'homework'
+                    ? 'bg-brand-orange text-white shadow-sm'
+                    : 'bg-transparent text-gray-500 hover:text-brand-orange hover:bg-orange-50/40'
+                    }`}
                 >
                   <BookOpen className="w-4 h-4 shrink-0" />
                   <span>Today's Homework</span>
@@ -478,63 +557,60 @@ export const DashboardView: React.FC = () => {
 
                 {/* Today's tasks */}
                 {filteredActionItems.length > 0 ? (
-                <div className="space-y-3">
-                  {filteredActionItems.map((item) => (
-                    <div 
-                      key={item.id} 
-                      className={`group rounded-2xl border p-4 transition-all duration-200 flex items-start gap-4 hover:shadow-xs ${
-                        item.completed 
-                          ? 'border-green-100 bg-green-50/30' 
+                  <div className="space-y-3">
+                    {filteredActionItems.map((item) => (
+                      <div
+                        key={item.id}
+                        className={`group rounded-2xl border p-4 transition-all duration-200 flex items-start gap-4 hover:shadow-xs ${item.completed
+                          ? 'border-green-100 bg-green-50/30'
                           : 'border-gray-100 bg-gray-50/60 hover:bg-white'
-                      }`}
-                    >
-                      {/* Checkbox button */}
-                      <button
-                        type="button"
-                        onClick={() => void handleTaskToggle(item)}
-                        disabled={togglingItemId === item.id}
-                        className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all select-none cursor-pointer outline-none ${
-                          item.completed 
-                            ? 'border-green-500 bg-green-500 text-white hover:bg-green-600' 
-                            : 'border-gray-350 bg-white hover:border-brand-orange'
-                        }`}
+                          }`}
                       >
-                        {item.completed ? (
-                          <CheckCircle2 className="w-4 h-4 shrink-0 text-white" strokeWidth={3} />
-                        ) : togglingItemId === item.id ? (
-                          <div className="w-2.5 h-2.5 border-2 border-brand-orange border-t-transparent rounded-full animate-spin" />
-                        ) : null}
-                      </button>
+                        {/* Checkbox button */}
+                        <button
+                          type="button"
+                          onClick={() => void handleTaskToggle(item)}
+                          disabled={togglingItemId === item.id}
+                          className={`w-6 h-6 rounded-lg border-2 flex items-center justify-center shrink-0 transition-all select-none cursor-pointer outline-none ${item.completed
+                            ? 'border-green-500 bg-green-500 text-white hover:bg-green-600'
+                            : 'border-gray-350 bg-white hover:border-brand-orange'
+                            }`}
+                        >
+                          {item.completed ? (
+                            <CheckCircle2 className="w-4 h-4 shrink-0 text-white" strokeWidth={3} />
+                          ) : togglingItemId === item.id ? (
+                            <div className="w-2.5 h-2.5 border-2 border-brand-orange border-t-transparent rounded-full animate-spin" />
+                          ) : null}
+                        </button>
 
-                      {/* Content */}
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-black leading-snug transition-all ${
-                          item.completed ? 'line-through text-gray-400' : 'text-gray-800'
-                        }`}>
-                          {item.title}
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2 mt-1.5">
-                          <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-orange-50 text-brand-orange border border-brand-orange/10 truncate max-w-[150px]">
-                            {item.planTitle}
-                          </span>
-                          {item.estimatedHours !== null && (
-                            <span className="text-[10px] text-gray-400 font-extrabold flex items-center gap-1">
-                              <Clock className="w-3 h-3 shrink-0" />
-                              {item.estimatedHours} {item.estimatedHours === 1 ? 'hr' : 'hrs'}
+                        {/* Content */}
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm font-black leading-snug transition-all ${item.completed ? 'line-through text-gray-400' : 'text-gray-800'
+                            }`}>
+                            {item.title}
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-orange-50 text-brand-orange border border-brand-orange/10 truncate max-w-[150px]">
+                              {item.planTitle}
                             </span>
-                          )}
+                            {item.estimatedHours !== null && (
+                              <span className="text-[10px] text-gray-400 font-extrabold flex items-center gap-1">
+                                <Clock className="w-3 h-3 shrink-0" />
+                                {item.estimatedHours} {item.estimatedHours === 1 ? 'hr' : 'hrs'}
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
 
-                      {/* Completion flag */}
-                      {item.completed && (
-                        <span className="text-[9px] font-black bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded-full uppercase shrink-0 select-none">
-                          Done
-                        </span>
-                      )}
-                    </div>
-                  ))}
-                </div>
+                        {/* Completion flag */}
+                        {item.completed && (
+                          <span className="text-[9px] font-black bg-green-100 text-green-700 border border-green-200 px-2 py-0.5 rounded-full uppercase shrink-0 select-none">
+                            Done
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 ) : (
                   /* Tab 2 Empty State */
                   <div className="flex flex-col items-center justify-center text-center py-10 space-y-4 animate-[fadeIn_0.2s_ease-out]">
@@ -560,8 +636,8 @@ export const DashboardView: React.FC = () => {
               filteredHomework.length > 0 ? (
                 <div className="space-y-3">
                   {filteredHomework.map((item) => (
-                    <div 
-                      key={item.id} 
+                    <div
+                      key={item.id}
                       className="group rounded-2xl border border-gray-100 p-4 bg-gray-50/60 hover:bg-white hover:shadow-xs transition-all duration-200 flex items-start gap-4"
                     >
                       {/* Emoji container */}
@@ -576,7 +652,7 @@ export const DashboardView: React.FC = () => {
                         </div>
                         <div className="flex flex-wrap items-center gap-2.5 mt-2">
                           {item.subjectName && (
-                            <Badge 
+                            <Badge
                               variant={getBadgeVariant(item.subjectId ?? 'maths') as any}
                               className="text-[10px] font-black shrink-0"
                             >
@@ -591,11 +667,10 @@ export const DashboardView: React.FC = () => {
                       </div>
 
                       {/* Status flag */}
-                      <span className={`text-[9px] font-black border px-2 py-0.5 rounded-full uppercase shrink-0 select-none ${
-                        item.status === 'Completed'
-                          ? 'bg-green-50 text-green-700 border-green-200'
-                          : 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
-                      }`}>
+                      <span className={`text-[9px] font-black border px-2 py-0.5 rounded-full uppercase shrink-0 select-none ${item.status === 'Completed'
+                        ? 'bg-green-50 text-green-700 border-green-200'
+                        : 'bg-amber-50 text-amber-700 border-amber-200 animate-pulse'
+                        }`}>
                         {item.status}
                       </span>
                     </div>
@@ -630,7 +705,7 @@ export const DashboardView: React.FC = () => {
           <h4 className="text-xs font-black text-gray-400 uppercase tracking-wider">
             This Week's Progress
           </h4>
-          
+
           <div className="space-y-3.5">
             {weeklyProgress.map((sub) => (
               <ProgressCard

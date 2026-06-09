@@ -195,10 +195,7 @@ export const QuizView: React.FC = () => {
   const correctAnswers = userAnswers.filter((ans) => ans.isCorrect).length;
   const incorrectAnswers = totalQuestions - correctAnswers;
   const accuracyPercentage = totalQuestions > 0 ? Math.round((correctAnswers / totalQuestions) * 100) : 0;
-<<<<<<< Updated upstream
-=======
 
->>>>>>> Stashed changes
 
   const getPerformanceSummary = (accuracy: number) => {
     if (accuracy >= 90) {

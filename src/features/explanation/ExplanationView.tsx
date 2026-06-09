@@ -4,7 +4,7 @@ import { setActiveScreen } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import StepCard from '../../components/common/StepCard';
-import AIResponseRenderer from '../../components/common/AIResponseRenderer';
+import AIResponseRenderer, { ensureOcrStructuredMarkdown } from '../../components/common/AIResponseRenderer';
 import {
   getQuiz,
   getExplanation,
@@ -127,14 +127,10 @@ export const ExplanationView: React.FC = () => {
           <Button variant="back" onClick={() => void handleNavigate(2)} />
           <div>
             <div className="flex flex-wrap items-center gap-2 mb-1">
-<<<<<<< Updated upstream
               <Badge variant={subjectVariant as any}>
                 {explanation?.subject?.emoji ? `${explanation.subject.emoji} ` : ''}
                 {(explanation?.subject?.name as string) ?? 'Homework'}
               </Badge>
-=======
-              <Badge variant={subjectVariant as any}>{(explanation?.subject?.name as string) ?? 'Homework'}</Badge>
->>>>>>> Stashed changes
               <Badge variant="white">{scanLabel}</Badge>
               {explanation?.pageCount ? <Badge variant="white">{explanation.pageCount} page(s)</Badge> : null}
             </div>
@@ -159,7 +155,7 @@ export const ExplanationView: React.FC = () => {
               <div className="mt-4 bg-white/80 rounded-xl p-4 border border-white/70">
                 <div className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Extracted text</div>
                 <div className="text-sm font-semibold leading-6 text-gray-700">
-                  <AIResponseRenderer content={explanation.extractedText} />
+                  <AIResponseRenderer content={ensureOcrStructuredMarkdown(explanation.extractedText)} />
                 </div>
               </div>
             ) : null}

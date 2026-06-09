@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { hydrateSession, setActiveScreen, setSelectedSubjectId, setUser } from '../../store/slices/appSlice';
 import { SUBJECTS } from '../../constants/mockData';
@@ -17,6 +17,7 @@ export const DashboardView: React.FC = () => {
   const [xpAnimation, setXpAnimation] = useState(false);
   const [togglingItemId, setTogglingItemId] = useState<string | null>(null);
   const [carryOverOpen, setCarryOverOpen] = useState(false);
+  const studyPlanRef = useRef<HTMLDivElement>(null);
 
   const getLocalDateString = () => {
     const date = new Date();

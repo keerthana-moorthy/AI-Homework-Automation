@@ -2,11 +2,7 @@ import React from 'react';
 
 interface BadgeProps {
   children: React.ReactNode;
-<<<<<<< Updated upstream
-  variant?: 'math' | 'sci' | 'eng' | 'tam' | 'hist' | 'geo' | 'gk' | 'other' | 'soc' | 'default' | 'white';
-=======
-  variant?: 'math' | 'sci' | 'eng' | 'tam' | 'soc' | 'default' | 'white' | 'orange' | 'green';
->>>>>>> Stashed changes
+  variant?: 'math' | 'sci' | 'eng' | 'tam' | 'hist' | 'geo' | 'gk' | 'other' | 'soc' | 'default' | 'white' | 'orange' | 'green';
   className?: string;
 }
 

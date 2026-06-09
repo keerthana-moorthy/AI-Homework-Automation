@@ -160,21 +160,21 @@ export const parseMarkdown = (text: string): Block[] => {
 };
 
 // Renders inline styles: bold, italic, inline code, and links
-const renderInlineText = (text: string): React.ReactNode[] => {
+const renderInlineText = (text: string, hasCustomColor: boolean): React.ReactNode[] => {
   const regex = /(\*\*.*?\*\*|\*.*?\*|`.*?`|\[.*?\]\(.*?\))/g;
   const parts = text.split(regex);
 
   return parts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return (
-        <strong key={index} className="text-brand-purple font-black">
+        <strong key={index} className={`font-black ${hasCustomColor ? '' : 'text-brand-purple'}`}>
           {part.slice(2, -2)}
         </strong>
       );
     }
     if (part.startsWith('*') && part.endsWith('*')) {
       return (
-        <em key={index} className="italic text-gray-700 font-semibold">
+        <em key={index} className={`italic font-semibold ${hasCustomColor ? '' : 'text-gray-700'}`}>
           {part.slice(1, -1)}
         </em>
       );
@@ -207,11 +207,43 @@ const renderInlineText = (text: string): React.ReactNode[] => {
   });
 };
 
+export const ensureOcrStructuredMarkdown = (text: string): string => {
+  if (!text) return '';
+  const trimmed = text.trim();
+
+  // Check if it already has the structured headers (specifically # Summary)
+  if (/#\s*Summary/i.test(trimmed) || /##\s*Main Topic/i.test(trimmed)) {
+    return trimmed;
+  }
+
+  // Split into paragraphs to construct structure
+  const paragraphs = trimmed.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  const title = paragraphs[0] ? paragraphs[0].slice(0, 100) : 'Scanned Homework Content';
+
+  let mainTopic = title;
+  let keyPoints = '';
+  let importantConcepts = '';
+  let detailedAnalysis = '';
+
+  if (paragraphs.length === 1) {
+    keyPoints = `- Extracted document text\n- Ready for homework solver`;
+    importantConcepts = `- Automated scan and text extraction`;
+    detailedAnalysis = paragraphs[0];
+  } else if (paragraphs.length >= 2) {
+    mainTopic = paragraphs[0];
+    keyPoints = paragraphs.slice(1, Math.min(3, paragraphs.length)).map(p => `- ${p}`).join('\n');
+    importantConcepts = `- Concept identified in text: ${title}`;
+    detailedAnalysis = paragraphs.slice(1).join('\n\n');
+  }
+
+  return `# Summary\nThe uploaded homework document has been scanned and processed successfully.\n\n## Main Topic\n${mainTopic}\n\n## Key Points\n${keyPoints || '- Content scanned successfully.'}\n\n## Important Concepts\n${importantConcepts || '- Subject concepts analysis.'}\n\n## Detailed Analysis\n${detailedAnalysis}\n\n## Final Takeaways\nReview the step-by-step instructions below to solve and master this topic.`;
+};
+
 export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
   content,
   stream = false,
   onStreamComplete,
-  speed = 15,
+  speed = 30,
   loading = false,
   className = '',
 }) => {
@@ -273,9 +305,11 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
   }
 
   const blocks = parseMarkdown(displayedText);
+  const hasCustomColor = className.includes('text-');
+  const blockAnimationClass = 'animate-[fadeIn_0.2s_ease-out]';
 
   return (
-    <div className={`font-nunito space-y-4 text-gray-800 ${className}`}>
+    <div className={`font-nunito space-y-4 ${hasCustomColor ? '' : 'text-gray-800'} ${className}`}>
       {blocks.map((block, idx) => {
         const isLastBlock = idx === blocks.length - 1;
 
@@ -283,7 +317,7 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
           case 'heading': {
             const headingContent = (
               <>
-                {renderInlineText(block.content || '')}
+                {renderInlineText(block.content || '', hasCustomColor)}
                 {isLastBlock && isStreaming && (
                   <span className="inline-block w-2 h-4 bg-brand-purple ml-1.5 animate-pulse rounded-[1px] align-middle" />
                 )}
@@ -294,7 +328,7 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
               return (
                 <h1
                   key={idx}
-                  className="text-xl font-black text-gray-800 leading-tight mb-3 mt-4 border-b border-gray-150 pb-1.5 font-poppins"
+                  className={`text-xl font-black leading-tight mb-3 mt-4 border-b border-gray-150 pb-1.5 font-poppins ${hasCustomColor ? '' : 'text-gray-800'} ${blockAnimationClass}`}
                 >
                   {headingContent}
                 </h1>
@@ -304,7 +338,7 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
               return (
                 <h2
                   key={idx}
-                  className="text-lg font-black text-gray-800 leading-snug mb-2.5 mt-3.5 flex items-center gap-2 font-poppins"
+                  className={`text-lg font-black leading-snug mb-2.5 mt-3.5 flex items-center gap-2 font-poppins ${hasCustomColor ? '' : 'text-gray-800'} ${blockAnimationClass}`}
                 >
                   <span className="w-1.5 h-5 bg-brand-purple rounded-full inline-block shrink-0" />
                   {headingContent}
@@ -314,7 +348,7 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
             return (
               <h3
                 key={idx}
-                className="text-base font-extrabold text-gray-800 leading-snug mb-2 mt-3 font-poppins"
+                className={`text-base font-extrabold leading-snug mb-2 mt-3 font-poppins ${hasCustomColor ? '' : 'text-gray-800'} ${blockAnimationClass}`}
               >
                 {headingContent}
               </h3>
@@ -323,14 +357,14 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
 
           case 'list':
             return (
-              <ul key={idx} className="list-none space-y-2 mb-4 pl-1">
+              <ul key={idx} className={`list-none space-y-2 mb-4 pl-1 ${blockAnimationClass}`}>
                 {block.items?.map((item, itemIdx) => {
                   const isLastItem = isLastBlock && itemIdx === (block.items?.length ?? 0) - 1;
                   return (
-                    <li key={itemIdx} className="text-sm font-semibold text-gray-700 flex items-start gap-2.5">
+                    <li key={itemIdx} className={`text-sm font-semibold flex items-start gap-2.5 ${hasCustomColor ? '' : 'text-gray-700'}`}>
                       <span className="w-2.5 h-2.5 rounded-full bg-brand-orange mt-1.5 shrink-0 shadow-xs" />
                       <span className="leading-relaxed flex-1">
-                        {renderInlineText(item)}
+                        {renderInlineText(item, hasCustomColor)}
                         {isLastItem && isStreaming && (
                           <span className="inline-block w-2.5 h-4 bg-brand-purple ml-1.5 animate-pulse rounded-[1px] align-middle" />
                         )}
@@ -343,7 +377,7 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
 
           case 'ordered-list':
             return (
-              <div key={idx} className="space-y-3.5 mb-4 pl-0.5">
+              <div key={idx} className={`space-y-3.5 mb-4 pl-0.5 ${blockAnimationClass}`}>
                 {block.items?.map((item, itemIdx) => {
                   const isLastItem = isLastBlock && itemIdx === (block.items?.length ?? 0) - 1;
                   return (
@@ -355,8 +389,8 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
                         {itemIdx + 1}
                       </div>
                       <div className="font-nunito flex-1">
-                        <div className="text-sm text-gray-700 font-semibold leading-relaxed">
-                          {renderInlineText(item)}
+                        <div className={`text-sm font-semibold leading-relaxed ${hasCustomColor ? '' : 'text-gray-700'}`}>
+                          {renderInlineText(item, hasCustomColor)}
                           {isLastItem && isStreaming && (
                             <span className="inline-block w-2.5 h-4 bg-brand-purple ml-1.5 animate-pulse rounded-[1px] align-middle" />
                           )}
@@ -372,9 +406,9 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
             return (
               <blockquote
                 key={idx}
-                className="border-l-4 border-brand-purple bg-brand-purpleLight/40 pl-4 py-2.5 pr-2.5 rounded-r-2xl text-sm italic font-semibold text-gray-650 mb-4 leading-relaxed"
+                className={`border-l-4 border-brand-purple bg-brand-purpleLight/40 pl-4 py-2.5 pr-2.5 rounded-r-2xl text-sm italic font-semibold mb-4 leading-relaxed ${hasCustomColor ? '' : 'text-gray-655'} ${blockAnimationClass}`}
               >
-                {renderInlineText(block.content || '')}
+                {renderInlineText(block.content || '', hasCustomColor)}
                 {isLastBlock && isStreaming && (
                   <span className="inline-block w-2.5 h-4 bg-brand-purple ml-1.5 animate-pulse rounded-[1px] align-middle" />
                 )}
@@ -385,7 +419,7 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
             return (
               <div
                 key={idx}
-                className="relative group my-4 rounded-2xl overflow-hidden border border-gray-200 shadow-xs bg-gray-900 text-white font-mono text-xs"
+                className={`relative group my-4 rounded-2xl overflow-hidden border border-gray-200 shadow-xs bg-gray-900 text-white font-mono text-xs ${blockAnimationClass}`}
               >
                 <div className="bg-gray-800/80 px-4 py-2 flex items-center justify-between text-[10px] font-black uppercase text-gray-400 select-none border-b border-gray-800">
                   <span>{block.language || 'code'}</span>
@@ -407,7 +441,7 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
 
           case 'table':
             return (
-              <div key={idx} className="my-4 overflow-x-auto rounded-2xl border border-gray-150 shadow-xs">
+              <div key={idx} className={`my-4 overflow-x-auto rounded-2xl border border-gray-150 shadow-xs ${blockAnimationClass}`}>
                 <table className="w-full text-left border-collapse text-xs font-nunito">
                   <thead>
                     <tr className="bg-brand-purpleLight text-brand-purple border-b border-brand-purpleBorder/30">
@@ -422,8 +456,8 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
                     {block.rows?.map((row, rowIdx) => (
                       <tr key={rowIdx} className="hover:bg-gray-50/50 transition">
                         {row.map((cell, cellIdx) => (
-                          <td key={cellIdx} className="p-3 font-semibold text-gray-700 leading-relaxed">
-                            {renderInlineText(cell)}
+                          <td key={cellIdx} className={`p-3 font-semibold leading-relaxed ${hasCustomColor ? '' : 'text-gray-700'}`}>
+                            {renderInlineText(cell, hasCustomColor)}
                           </td>
                         ))}
                       </tr>
@@ -441,8 +475,8 @@ export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({
           case 'paragraph':
           default:
             return (
-              <p key={idx} className="text-sm text-gray-700 font-semibold leading-relaxed mb-4">
-                {renderInlineText(block.content || '')}
+              <p key={idx} className={`text-sm font-semibold leading-relaxed mb-4 ${hasCustomColor ? '' : 'text-gray-700'} ${blockAnimationClass}`}>
+                {renderInlineText(block.content || '', hasCustomColor)}
                 {isLastBlock && isStreaming && (
                   <span className="inline-block w-2.5 h-4 bg-brand-purple ml-1.5 animate-pulse rounded-[1px] align-middle" />
                 )}

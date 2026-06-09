@@ -26,13 +26,11 @@ import {
   ChevronLeft,
   ChevronRight,
   FileText, 
-<<<<<<< Updated upstream
-=======
-  BookOpen, 
->>>>>>> Stashed changes
+  BookOpen,
   Trophy, 
   RefreshCw,
-  Clock
+  Clock,
+  Sparkles
 } from 'lucide-react';
 
 const chunkText = (text: string, wordsPerChunk: number = 300): string[] => {

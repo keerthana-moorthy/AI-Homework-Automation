@@ -40,10 +40,7 @@ const createId = (prefix: string) => {
 
 export const TutorView: React.FC = () => {
   const language = useAppSelector((state) => state.app.language);
-<<<<<<< Updated upstream
-=======
 
->>>>>>> Stashed changes
 
   // Chat State
   const [threads, setThreads] = useState<ChatThread[]>([]);

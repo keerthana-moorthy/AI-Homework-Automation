@@ -1,4 +1,5 @@
 import React from 'react';
+import AIResponseRenderer from './AIResponseRenderer';
 
 interface StepCardProps {
   stepNum: number;
@@ -16,9 +17,9 @@ export const StepCard: React.FC<StepCardProps> = ({
       <div className="w-7 h-7 rounded-full bg-brand-purple text-white text-sm font-black flex items-center justify-center shrink-0 select-none">
         {stepNum}
       </div>
-      <div className="font-nunito">
-        <div className="text-sm font-extrabold text-gray-800 mb-0.5">{title}</div>
-        <div className="text-[12px] text-gray-500 font-semibold leading-relaxed">{desc}</div>
+      <div className="font-nunito flex-1">
+        <div className="text-sm font-extrabold text-gray-800 mb-2">{title}</div>
+        <AIResponseRenderer content={desc} className="text-xs text-gray-600 font-semibold leading-relaxed" />
       </div>
     </div>
   );

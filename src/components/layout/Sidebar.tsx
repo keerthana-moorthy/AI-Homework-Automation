@@ -6,7 +6,6 @@ import {
   Camera, 
   Zap, 
   TrendingUp, 
-  HelpCircle, 
   LogOut,
   MessageSquare,
   Calendar

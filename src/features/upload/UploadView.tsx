@@ -16,7 +16,7 @@ import {
   updateScreen,
   updateSubject,
 } from '../../services/api';
-import AIResponseRenderer from '../../components/common/AIResponseRenderer';
+import AIResponseRenderer, { ensureOcrStructuredMarkdown } from '../../components/common/AIResponseRenderer';
 
 const uploadSchema = yup.object({
   language: yup.string().required('Language preference is required'),
@@ -197,7 +197,8 @@ export const UploadView: React.FC = () => {
         setPendingResponse(response);
         
         setOcrStage('streaming');
-        const textToStream = response.extractedText || response.questionText || 'No text extracted from document.';
+        const rawText = response.extractedText || response.questionText || 'No text extracted from document.';
+        const textToStream = ensureOcrStructuredMarkdown(rawText);
         
         let index = 0;
         const tokens = textToStream.split(/(\s+)/);

@@ -119,12 +119,13 @@ function AnimatedNumber({ value, className }: { value: number; className?: strin
 
   return (
     <span
-      className={`transition-colors duration-300 ${flash === 'up'
+      className={`transition-colors duration-300 ${
+        flash === 'up'
           ? 'text-green-500'
           : flash === 'down'
-            ? 'text-red-400'
-            : ''
-        } ${className ?? ''}`}
+          ? 'text-red-400'
+          : ''
+      } ${className ?? ''}`}
     >
       {displayed.toLocaleString()}
     </span>

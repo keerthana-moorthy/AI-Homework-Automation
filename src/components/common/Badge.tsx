@@ -2,7 +2,7 @@ import React from 'react';
 
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: 'math' | 'sci' | 'eng' | 'tam' | 'hist' | 'geo' | 'gk' | 'other' | 'default' | 'white';
+  variant?: 'math' | 'sci' | 'eng' | 'tam' | 'hist' | 'geo' | 'gk' | 'other' | 'soc' | 'default' | 'white';
   className?: string;
 }
 

@@ -4,11 +4,14 @@ import type { UserState } from '../../types/types';
 
 interface AppState {
   isLoggedIn: boolean;
-  activeScreen: number; // 0: Dashboard, 1: Onboarding, 2: Upload, 3: Explanation, 4: Quiz, 5: Parent, 6: Tutor
+  activeScreen: number;
   language: 'en' | 'ta' | 'both';
   selectedSubjectId: string | null;
   loading: boolean;
   user: UserState;
+  isAuthenticated: boolean;          // user has real credentials in the DB
+  showAuthModal: boolean;            // controls modal visibility
+  authModalContext: 'timer' | 'scan' | 'quiz' | 'studyplan' | null;
 }
 
 const levelForXp = (xpPoints: number) => {
@@ -21,10 +24,13 @@ const levelForXp = (xpPoints: number) => {
 
 const initialState: AppState = {
   isLoggedIn: false,
-  activeScreen: 1, // Start with Onboarding view
+  activeScreen: 1,
   language: 'en',
   selectedSubjectId: 'all',
   loading: true,
+  isAuthenticated: false,
+  showAuthModal: false,
+  authModalContext: null,
   user: {
     name: 'Arjun',
     className: 'Class 8',
@@ -86,6 +92,15 @@ const appSlice = createSlice({
       state.user.xpPoints += action.payload;
       state.user.level = levelForXp(state.user.xpPoints);
     },
+    setIsAuthenticated: (state, action: PayloadAction<boolean>) => {
+      state.isAuthenticated = action.payload;
+    },
+    setShowAuthModal: (state, action: PayloadAction<boolean>) => {
+      state.showAuthModal = action.payload;
+    },
+    setAuthModalContext: (state, action: PayloadAction<AppState['authModalContext']>) => {
+      state.authModalContext = action.payload;
+    },
   },
 });
 
@@ -99,5 +114,8 @@ export const {
   setUser,
   incrementStreak,
   addXp,
+  setIsAuthenticated,
+  setShowAuthModal,
+  setAuthModalContext,
 } = appSlice.actions;
 export default appSlice.reducer;

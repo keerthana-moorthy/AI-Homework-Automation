@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import hashlib
 import io
-import os
 import re
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -71,9 +69,6 @@ from .schemas import (
     UserOut,
     TodayHomeworkItem,
     TodayActionItem,
-    AuthRegisterRequest,
-    AuthLoginRequest,
-    AuthStatusOut,
 )
 from .services.analytics_service import build_recommendations, build_student_analytics
 from .services.orchestrator import get_vidya_ai_core
@@ -144,13 +139,6 @@ def on_startup() -> None:
         pass
     with SessionLocal() as db:
         seed_database(db)
-        # Reset logged_in for all users on startup.
-        # Since there are no browser-side session tokens (cookies/JWT), the
-        # logged_in flag in the DB becomes stale whenever the server is killed.
-        # Resetting it here ensures a server restart always requires re-auth.
-        from sqlalchemy import update as sa_update
-        db.execute(sa_update(UserProfile).values(logged_in=False))
-        db.commit()
 
 
 STUDY_PLAN_LIMITS = {
@@ -832,94 +820,6 @@ def get_session(db: Session = Depends(get_db)) -> dict[str, Any]:
     user = get_primary_user(db)
     return {"ok": True, **build_session_and_user_payload(user)}
 
-
-# ─────────────────────────────── AUTH ENDPOINTS ───────────────────────────────
-
-def _hash_password(password: str) -> str:
-    """Simple SHA-256 hash with a fixed salt prefix (good for demo; use bcrypt in production)."""
-    return hashlib.sha256(f"vidya_salt:{password}".encode()).hexdigest()
-
-
-@app.get("/api/auth/status")
-def auth_status(db: Session = Depends(get_db)) -> dict:
-    """Returns whether the user has registered credentials and is currently logged in."""
-    user = get_primary_user(db)
-    return {
-        "registered": bool(getattr(user, "is_registered", False)),
-        "loggedIn": bool(user.logged_in),
-    }
-
-
-@app.post("/api/auth/register")
-async def auth_register(payload: AuthRegisterRequest, db: Session = Depends(get_db)) -> dict:
-    """Register with name/class/email/password. Resets profile to fresh start (0 XP, 0 streak)."""
-    user = get_primary_user(db)
-
-    # Check email not already taken
-    if getattr(user, "is_registered", False) and user.email:
-        raise HTTPException(status_code=409, detail="An account already exists. Please sign in instead.")
-
-    # Minimal email validation
-    if "@" not in payload.email or "." not in payload.email.split("@")[-1]:
-        raise HTTPException(status_code=400, detail="Please enter a valid email address.")
-
-    if len(payload.password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
-
-    # ── Reset profile to fresh start ────────────────────────────────────────
-    user.name = payload.name.strip()
-    user.class_name = payload.class_name.strip()
-    user.email = payload.email.strip().lower()
-    user.hashed_password = _hash_password(payload.password)
-    user.is_registered = True
-    user.logged_in = True
-    user.active_screen = 0
-    # Reset gamification
-    user.xp_points = 0
-    user.streak = 0
-    user.level = level_for_xp(0)
-    user.homework_completed = 0
-    user.doubts_solved = 0
-    user.quiz_correct = 0
-    user.quiz_answered = 0
-    user.quiz_current_index = 0
-    user.quiz_selected_option = None
-    user.quiz_status = "idle"
-    user.quiz_xp_earned_this_session = 0
-    touch_user_level(user)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    await broadcast_event("session_updated", build_session_and_user_payload(user))
-    return {"ok": True, **build_session_and_user_payload(user), "dashboard": build_dashboard_payload(db, user)}
-
-
-@app.post("/api/auth/login")
-async def auth_login(payload: AuthLoginRequest, db: Session = Depends(get_db)) -> dict:
-    """Sign in with email + password."""
-    user = get_primary_user(db)
-
-    if not getattr(user, "is_registered", False) or not user.email:
-        raise HTTPException(status_code=404, detail="No account found. Please register first.")
-
-    if user.email != payload.email.strip().lower():
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
-
-    if user.hashed_password != _hash_password(payload.password):
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
-
-    user.logged_in = True
-    user.active_screen = 0
-    touch_user_level(user)
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-
-    await broadcast_event("session_updated", build_session_and_user_payload(user))
-    return {"ok": True, **build_session_and_user_payload(user), "dashboard": build_dashboard_payload(db, user)}
-
-# ──────────────────────────────────────────────────────────────────────────────
 
 @app.post("/api/session/login")
 async def session_login(db: Session = Depends(get_db)) -> dict[str, Any]:

@@ -33,6 +33,9 @@ class UserProfile(Base):
     quiz_status: Mapped[str] = mapped_column(String(20), nullable=False, default="idle")
     quiz_xp_earned_this_session: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     subscription_plan: Mapped[str] = mapped_column(String(40), nullable=False, default="Free")
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, default=None)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    is_registered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

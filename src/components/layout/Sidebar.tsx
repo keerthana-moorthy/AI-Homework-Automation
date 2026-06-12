@@ -1,16 +1,23 @@
 import React, { useState } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { hydrateSession, setActiveScreen } from '../../store/slices/appSlice';
-import { 
-  Home, 
-  Camera, 
-  BrainCircuit, 
-  Zap, 
-  Users, 
-  HelpCircle, 
+import {
+  hydrateSession,
+  setActiveScreen,
+  setIsAuthenticated,
+  setShowAuthModal,
+  setAuthModalContext,
+} from '../../store/slices/appSlice';
+import {
+  Home,
+  Camera,
+  BrainCircuit,
+  Zap,
+  Users,
+  HelpCircle,
   LogOut,
   MessageSquare,
-  Calendar
+  Calendar,
+  Lock,
 } from 'lucide-react';
 import { logout as logoutSession, toUserState, updateScreen } from '../../services/api';
 
@@ -19,27 +26,45 @@ interface SidebarProps {
   setIsOpen: (open: boolean) => void;
 }
 
+// Screens that require authentication
+const PROTECTED_SCREENS: Record<number, 'scan' | 'quiz' | 'studyplan'> = {
+  2: 'scan',
+  4: 'quiz',
+  7: 'studyplan',
+};
+
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector((state) => state.app.activeScreen);
+  const isAuthenticated = useAppSelector((state) => state.app.isAuthenticated);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const menuItems = [
-    { name: 'Dashboard', icon: Home, screen: 0 },
-    { name: 'Scan Homework', icon: Camera, screen: 2 },
-    { name: 'AI Tutor', icon: MessageSquare, screen: 6 },
-    { name: 'Study Plan', icon: Calendar, screen: 7 },
-    { name: 'Daily Quiz', icon: Zap, screen: 4 },
-    { name: 'Parent View', icon: Users, screen: 5 },
-    { name: 'Intro Tour', icon: HelpCircle, screen: 1 },
+    { name: 'Dashboard', icon: Home, screen: 0, protected: false },
+    { name: 'Scan Homework', icon: Camera, screen: 2, protected: true },
+    { name: 'AI Tutor', icon: MessageSquare, screen: 6, protected: false },
+    { name: 'Study Plan', icon: Calendar, screen: 7, protected: true },
+    { name: 'Daily Quiz', icon: Zap, screen: 4, protected: true },
+    { name: 'Parent View', icon: Users, screen: 5, protected: false },
+    { name: 'Intro Tour', icon: HelpCircle, screen: 1, protected: false },
   ];
 
   const handleNav = (screen: number) => {
+    const protectedContext = PROTECTED_SCREENS[screen];
+
+    // Gate: show auth modal instead of navigating if not authenticated
+    if (protectedContext && !isAuthenticated) {
+      dispatch(setAuthModalContext(protectedContext));
+      dispatch(setShowAuthModal(true));
+      setIsOpen(false);
+      return;
+    }
+
     dispatch(setActiveScreen(screen));
     void updateScreen(screen).catch((error) => {
       console.error('Unable to persist screen change', error);
     });
-    setIsOpen(false); // Close sidebar on mobile after clicking
+    setIsOpen(false);
   };
 
   const handleLogout = async () => {
@@ -55,6 +80,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
           user: toUserState(response.user),
         })
       );
+      dispatch(setIsAuthenticated(false));
       setIsOpen(false);
     } catch (error) {
       console.error('Unable to sign out', error);
@@ -67,7 +93,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
     <>
       {/* Mobile Backdrop */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/40 z-30 lg:hidden"
           onClick={() => setIsOpen(false)}
         />
@@ -94,27 +120,47 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeScreen === item.screen;
+            const isLocked = item.protected && !isAuthenticated;
+
             return (
               <button
                 key={item.name}
                 onClick={() => handleNav(item.screen)}
+                title={isLocked ? `Sign in to access ${item.name}` : item.name}
                 className={`
                   w-full flex items-center gap-3 px-4 py-3 rounded-xl font-nunito font-extrabold text-sm transition-all duration-150
-                  ${isActive 
-                    ? 'bg-brand-orange text-white shadow-sm' 
+                  ${isActive
+                    ? 'bg-brand-orange text-white shadow-sm'
                     : 'text-gray-500 hover:text-brand-orange hover:bg-orange-50/55'
                   }
                 `}
               >
                 <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-white' : 'text-gray-400'}`} />
-                <span>{item.name}</span>
+                <span className="flex-1 text-left">{item.name}</span>
+                {isLocked && (
+                  <Lock className="w-3.5 h-3.5 shrink-0 text-gray-300" />
+                )}
               </button>
             );
           })}
         </nav>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-gray-100 shrink-0">
+        <div className="p-4 border-t border-gray-100 shrink-0 space-y-2">
+          {/* Auth status indicator */}
+          {!isAuthenticated && (
+            <button
+              onClick={() => {
+                dispatch(setAuthModalContext('timer'));
+                dispatch(setShowAuthModal(true));
+                setIsOpen(false);
+              }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-nunito font-black text-xs text-brand-orange bg-orange-50 hover:bg-orange-100 transition-all border border-orange-100 cursor-pointer outline-none"
+            >
+              <Lock className="w-4 h-4 shrink-0" />
+              <span>Sign In / Sign Up</span>
+            </button>
+          )}
           <button
             onClick={handleLogout}
             disabled={isSigningOut}

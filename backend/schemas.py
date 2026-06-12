@@ -49,8 +49,27 @@ class UserOut(CamelModel):
     quiz_xp_earned_this_session: int
     subscription_plan: str
     active_analysis_id: int | None = None
+    email: str | None = None
+    is_registered: bool = False
     created_at: datetime
     updated_at: datetime
+
+
+class AuthRegisterRequest(BaseModel):
+    name: str
+    class_name: str
+    email: str
+    password: str
+
+
+class AuthLoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthStatusOut(BaseModel):
+    registered: bool
+    logged_in: bool
 
 
 class SubjectOut(CamelModel):

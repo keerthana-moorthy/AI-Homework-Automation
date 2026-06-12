@@ -281,6 +281,26 @@ export const getHealth = () => request<JsonRecord>('/health');
 export const getSession = () => request<SessionEnvelope>('/api/session');
 export const login = () => request<SessionEnvelope>('/api/session/login', { method: 'POST' });
 export const logout = () => request<SessionEnvelope>('/api/session/logout', { method: 'POST' });
+
+// ── Auth endpoints ──────────────────────────────────────────────────────────
+export interface AuthStatusResponse { registered: boolean; loggedIn: boolean; }
+export interface AuthRegisterPayload { name: string; className: string; email: string; password: string; }
+export interface AuthLoginPayload { email: string; password: string; }
+export interface AuthEnvelope extends SessionEnvelope { dashboard?: JsonRecord; }
+
+export const getAuthStatus = () => request<AuthStatusResponse>('/api/auth/status');
+export const authRegister = (p: AuthRegisterPayload) =>
+  request<AuthEnvelope>('/api/auth/register', {
+    method: 'POST',
+    body: JSON.stringify({ name: p.name, class_name: p.className, email: p.email, password: p.password }),
+  });
+export const authLogin = (p: AuthLoginPayload) =>
+  request<AuthEnvelope>('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: p.email, password: p.password }),
+  });
+// ───────────────────────────────────────────────────────────────────────────
+
 export const updateScreen = (activeScreen: number) =>
   request<SessionEnvelope>('/api/session/screen', {
     method: 'POST',

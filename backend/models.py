@@ -34,6 +34,9 @@ class UserProfile(Base):
     quiz_xp_earned_this_session: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     subscription_plan: Mapped[str] = mapped_column(String(40), nullable=False, default="Free")
     active_analysis_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, unique=True, default=None)
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True, default=None)
+    is_registered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=datetime.utcnow, onupdate=datetime.utcnow)
 

@@ -78,7 +78,21 @@ except Exception:
 try:
     from sqlalchemy import text
     with engine.begin() as conn:
-        conn.execute(text("UPDATE study_plans SET updated_at = created_at WHERE updated_at IS NULL"))
+        conn.execute(text("ALTER TABLE user_profiles ADD COLUMN email VARCHAR(255)"))
+except Exception:
+    pass
+
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE user_profiles ADD COLUMN hashed_password VARCHAR(255)"))
+except Exception:
+    pass
+
+try:
+    from sqlalchemy import text
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE user_profiles ADD COLUMN is_registered BOOLEAN DEFAULT 0"))
 except Exception:
     pass
 

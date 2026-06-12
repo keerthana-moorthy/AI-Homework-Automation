@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Provider } from 'react-redux';
 import DashboardLayout from './components/layout/DashboardLayout';
 import DashboardView from './features/dashboard/DashboardView';
@@ -9,14 +9,25 @@ import QuizView from './features/quiz/QuizView';
 import UploadView from './features/upload/UploadView';
 import TutorView from './features/tutor/TutorView';
 import StudyPlanView from './features/studyplan/StudyPlanView';
-import { getSession, toUserState } from './services/api';
-import { hydrateSession, setLoading } from './store/slices/appSlice';
+import AuthModal from './components/auth/AuthModal';
+import { getSession, toUserState, getAuthStatus } from './services/api';
+import {
+  hydrateSession,
+  setLoading,
+  setIsAuthenticated,
+  setShowAuthModal,
+  setAuthModalContext,
+} from './store/slices/appSlice';
 import store, { useAppDispatch, useAppSelector } from './store';
+
+const AUTH_TIMER_SECONDS = 30;
 
 const MainAppContent: React.FC = () => {
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector((state) => state.app.activeScreen);
   const loading = useAppSelector((state) => state.app.loading);
+  const isAuthenticated = useAppSelector((state) => state.app.isAuthenticated);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -24,10 +35,9 @@ const MainAppContent: React.FC = () => {
     const bootstrapSession = async () => {
       dispatch(setLoading(true));
       try {
+        // 1. Load session (existing user data, screen state etc.)
         const response = await getSession();
-        if (cancelled) {
-          return;
-        }
+        if (cancelled) return;
 
         dispatch(
           hydrateSession({
@@ -38,6 +48,22 @@ const MainAppContent: React.FC = () => {
             user: toUserState(response.user),
           })
         );
+
+        // 2. Check if user has registered credentials AND is currently logged in.
+        // If the user logged out previously, `loggedIn` will be false in the DB
+        // so we must NOT set isAuthenticated on restart.
+        const authStatus = await getAuthStatus();
+        if (cancelled) return;
+
+        if (authStatus.registered && authStatus.loggedIn) {
+          dispatch(setIsAuthenticated(true));
+        } else {
+          // Start 30-second timer to prompt sign-up
+          timerRef.current = setTimeout(() => {
+            dispatch(setAuthModalContext('timer'));
+            dispatch(setShowAuthModal(true));
+          }, AUTH_TIMER_SECONDS * 1000);
+        }
       } catch (error) {
         if (!cancelled) {
           console.error('Failed to load session', error);
@@ -54,15 +80,24 @@ const MainAppContent: React.FC = () => {
 
     return () => {
       cancelled = true;
+      if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, [dispatch]);
+
+  // Cancel the 30s timer once authenticated
+  useEffect(() => {
+    if (isAuthenticated && timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, [isAuthenticated]);
 
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-brand-amberLight via-white to-brand-blueLight font-nunito">
         <div className="bg-white/90 backdrop-blur rounded-3xl border border-white shadow-xl px-6 py-5 text-center max-w-sm mx-4">
           <div className="w-12 h-12 rounded-full bg-brand-orange text-white flex items-center justify-center mx-auto mb-3 text-2xl shadow-[0_4px_0_#C84B1E]">
-            ...
+            🎓
           </div>
           <h1 className="text-lg font-black text-gray-800">Loading Vidya AI</h1>
           <p className="text-sm text-gray-500 font-semibold mt-1">Connecting to your backend session...</p>
@@ -72,31 +107,34 @@ const MainAppContent: React.FC = () => {
   }
 
   if (activeScreen === 1) {
-    return <OnboardingView />;
+    return (
+      <>
+        <OnboardingView />
+        <AuthModal />
+      </>
+    );
   }
 
   const renderActiveScreen = () => {
     switch (activeScreen) {
-      case 0:
-        return <DashboardView />;
-      case 2:
-        return <UploadView />;
-      case 3:
-        return <ExplanationView />;
-      case 4:
-        return <QuizView />;
-      case 5:
-        return <ParentView />;
-      case 6:
-        return <TutorView />;
-      case 7:
-        return <StudyPlanView />;
-      default:
-        return <DashboardView />;
+      case 0:  return <DashboardView />;
+      case 2:  return <UploadView />;
+      case 3:  return <ExplanationView />;
+      case 4:  return <QuizView />;
+      case 5:  return <ParentView />;
+      case 6:  return <TutorView />;
+      case 7:  return <StudyPlanView />;
+      default: return <DashboardView />;
     }
   };
 
-  return <DashboardLayout>{renderActiveScreen()}</DashboardLayout>;
+  return (
+    <>
+      <DashboardLayout>{renderActiveScreen()}</DashboardLayout>
+      {/* Global auth modal — rendered above everything */}
+      <AuthModal />
+    </>
+  );
 };
 
 export const App: React.FC = () => {

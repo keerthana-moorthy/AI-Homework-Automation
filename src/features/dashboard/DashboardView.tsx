@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { hydrateSession, setActiveScreen, setSelectedSubjectId, setUser } from '../../store/slices/appSlice';
+import { hydrateSession, setActiveScreen, setSelectedSubjectId, addXp, setUser } from '../../store/slices/appSlice';
 import { SUBJECTS } from '../../constants/mockData';
 import ProgressCard from '../../components/common/ProgressCard';
 import Badge from '../../components/common/Badge';

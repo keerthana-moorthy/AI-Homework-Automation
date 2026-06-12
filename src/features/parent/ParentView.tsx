@@ -26,6 +26,7 @@ export const ParentView: React.FC = () => {
   const [parentData, setParentData] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
   const [selectedChartMetric, setSelectedChartMetric] = useState<ChartMetric>('homework');
+  const [currentChunkIndex, setCurrentChunkIndex] = useState<number>(0);
 
   // Load parent view progress data
   const loadParentData = async (activeFilter: string, start?: string, end?: string) => {
@@ -37,6 +38,7 @@ export const ParentView: React.FC = () => {
         activeFilter === 'custom' ? end : undefined
       );
       setParentData(response);
+      setCurrentChunkIndex(0);
       dispatch(
         hydrateSession({
           loggedIn: true,
@@ -130,15 +132,80 @@ export const ParentView: React.FC = () => {
     { id: 'consistency_master', name: 'Consistency Master', description: 'Kept a study streak of 7 or more days', unlocked: false, emoji: '🔥', earnedDate: null },
   ];
 
-  const weeklyActivity = parentData?.weeklyActivity ?? [
-    { label: 'Mon', homework: 1, quizzes: 2, tutorSessions: 1, doubts: 3, studyTime: 45 },
-    { label: 'Tue', homework: 2, quizzes: 1, tutorSessions: 1, doubts: 2, studyTime: 60 },
-    { label: 'Wed', homework: 0, quizzes: 3, tutorSessions: 0, doubts: 4, studyTime: 30 },
-    { label: 'Thu', homework: 1, quizzes: 0, tutorSessions: 2, doubts: 1, studyTime: 40 },
-    { label: 'Fri', homework: 1, quizzes: 2, tutorSessions: 0, doubts: 3, studyTime: 50 },
-    { label: 'Sat', homework: 0, quizzes: 1, tutorSessions: 1, doubts: 2, studyTime: 25 },
-    { label: 'Sun', homework: 0, quizzes: 0, tutorSessions: 0, doubts: 0, studyTime: 0 },
+  const fallbackWeeklyActivity = [
+    { label: 'Mon', date: '2026-06-08', homework: 1, quizzes: 2, tutorSessions: 1, doubts: 3, studyTime: 45 },
+    { label: 'Tue', date: '2026-06-09', homework: 2, quizzes: 1, tutorSessions: 1, doubts: 2, studyTime: 60 },
+    { label: 'Wed', date: '2026-06-10', homework: 0, quizzes: 3, tutorSessions: 0, doubts: 4, studyTime: 30 },
+    { label: 'Thu', date: '2026-06-11', homework: 1, quizzes: 0, tutorSessions: 2, doubts: 1, studyTime: 40 },
+    { label: 'Fri', date: '2026-06-12', homework: 1, quizzes: 2, tutorSessions: 0, doubts: 3, studyTime: 50 },
+    { label: 'Sat', date: '2026-06-13', homework: 0, quizzes: 1, tutorSessions: 1, doubts: 2, studyTime: 25 },
+    { label: 'Sun', date: '2026-06-14', homework: 0, quizzes: 0, tutorSessions: 0, doubts: 0, studyTime: 0 },
   ];
+
+  const getWeeklyChunks = (activity: any[]) => {
+    const res: any[][] = [];
+    if (!activity || activity.length === 0) {
+      return [[]];
+    }
+    if (activity.length <= 7) {
+      res.push(activity);
+      return res;
+    }
+    for (let i = activity.length; i > 0; i -= 7) {
+      const start = Math.max(0, i - 7);
+      const chunk = activity.slice(start, i);
+      if (start === 0 && chunk.length < 7 && activity.length >= 7) {
+        res.push(activity.slice(0, 7));
+      } else {
+        res.push(chunk);
+      }
+    }
+    return res;
+  };
+
+  const formatDateRange = (chunk: any[]) => {
+    if (!chunk || chunk.length === 0) return 'No Date Range';
+    const firstDateStr = chunk[0].date;
+    const lastDateStr = chunk[chunk.length - 1].date;
+    if (!firstDateStr || !lastDateStr) return 'No Date Range';
+
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    
+    const parseDateStr = (str: string) => {
+      const parts = str.split('-');
+      const year = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1;
+      const day = parseInt(parts[2], 10);
+      return { year, month, day, monthName: monthNames[month] || '' };
+    };
+
+    const d1 = parseDateStr(firstDateStr);
+    const d2 = parseDateStr(lastDateStr);
+
+    const padDay = (day: number) => String(day).padStart(2, '0');
+
+    if (d1.year === d2.year) {
+      return `${d1.monthName} ${padDay(d1.day)} - ${d2.monthName} ${padDay(d2.day)}, ${d1.year}`;
+    } else {
+      return `${d1.monthName} ${padDay(d1.day)}, ${d1.year} - ${d2.monthName} ${padDay(d2.day)}, ${d2.year}`;
+    }
+  };
+
+  const formatAxisDate = (dateStr: string) => {
+    if (!dateStr) return '';
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const parts = dateStr.split('-');
+    if (parts.length < 3) return dateStr;
+    const month = parseInt(parts[1], 10) - 1;
+    const day = parseInt(parts[2], 10);
+    const padDay = (d: number) => String(d).padStart(2, '0');
+    return `${monthNames[month] || ''} ${padDay(day)}`;
+  };
+
+  const rawWeeklyActivity = parentData?.weeklyActivity ?? fallbackWeeklyActivity;
+  const chunks = getWeeklyChunks(rawWeeklyActivity);
+  const safeChunkIndex = Math.min(currentChunkIndex, chunks.length - 1);
+  const currentChunk = chunks[safeChunkIndex] || [];
 
   const getStatStyles = (id: string) => {
     switch (id) {
@@ -159,7 +226,7 @@ export const ParentView: React.FC = () => {
     return 'blue';
   };
 
-  const maxChartVal = Math.max(...weeklyActivity.map((d: any) => d[selectedChartMetric] || 0), 1);
+  const maxChartVal = Math.max(...currentChunk.map((d: any) => d[selectedChartMetric] || 0), 1);
 
   const getMetricLabel = (m: ChartMetric) => {
     switch (m) {
@@ -350,6 +417,38 @@ export const ParentView: React.FC = () => {
                   </div>
                 </div>
 
+                {/* Navigation and Date Range Header */}
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gray-50/50 px-4 py-2.5 rounded-2xl border border-gray-100/60 mb-3 font-nunito">
+                  <div className="text-xs font-black text-gray-600 uppercase tracking-wide select-none flex items-center gap-1.5">
+                    <span>📅</span>
+                    <span className="text-brand-orangeHover">{formatDateRange(currentChunk)}</span>
+                  </div>
+                  <div className="flex items-center gap-2 select-none">
+                    <button
+                      onClick={() => setCurrentChunkIndex(prev => Math.min(chunks.length - 1, prev + 1))}
+                      disabled={currentChunkIndex >= chunks.length - 1}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1 border border-gray-200/60 shadow-sm ${
+                        currentChunkIndex < chunks.length - 1
+                          ? 'bg-white text-gray-700 hover:bg-gray-100 hover:text-gray-900 active:scale-[0.98] cursor-pointer'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+                      }`}
+                    >
+                      ◀ Previous Week
+                    </button>
+                    <button
+                      onClick={() => setCurrentChunkIndex(prev => Math.max(0, prev - 1))}
+                      disabled={currentChunkIndex <= 0}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition flex items-center gap-1 border border-gray-200/60 shadow-sm ${
+                        currentChunkIndex > 0
+                          ? 'bg-white text-gray-700 hover:bg-gray-100 hover:text-gray-900 active:scale-[0.98] cursor-pointer'
+                          : 'bg-gray-100 text-gray-400 cursor-not-allowed opacity-50'
+                      }`}
+                    >
+                      Next Week ▶
+                    </button>
+                  </div>
+                </div>
+
                 {/* SVG Chart */}
                 <div className="p-3 bg-gray-50/40 rounded-2xl border border-gray-100/70">
                   <p className="text-[11px] font-extrabold text-gray-400 mb-2 select-none uppercase tracking-wide">
@@ -364,9 +463,10 @@ export const ParentView: React.FC = () => {
                     <line x1="40" y1="170" x2="480" y2="170" stroke="#E2E8F0" strokeWidth="1.5" />
                     
                     {/* Bars rendering */}
-                    {weeklyActivity.map((day: any, idx: number) => {
-                      const barWidth = Math.max(14, 200 / weeklyActivity.length);
-                      const spacing = (440 - barWidth * weeklyActivity.length) / (weeklyActivity.length + 1);
+                    {currentChunk.map((day: any, idx: number) => {
+                      const chunkLength = currentChunk.length || 7;
+                      const barWidth = Math.max(14, 200 / chunkLength);
+                      const spacing = (440 - barWidth * chunkLength) / (chunkLength + 1);
                       const x = 40 + spacing + idx * (barWidth + spacing);
                       const val = day[selectedChartMetric] || 0;
                       const height = (val / maxChartVal) * 130;
@@ -376,9 +476,9 @@ export const ParentView: React.FC = () => {
                         <g key={day.date || idx} className="group cursor-pointer">
                           {/* Tooltip Background */}
                           <rect 
-                            x={x - (28 - barWidth) / 2} 
+                            x={x - (34 - barWidth) / 2} 
                             y={y - 25} 
-                            width="28" 
+                            width="34" 
                             height="18" 
                             rx="5" 
                             fill="#1E293B" 
@@ -415,7 +515,7 @@ export const ParentView: React.FC = () => {
                             fontWeight="extrabold" 
                             textAnchor="middle"
                           >
-                            {day.label}
+                            {formatAxisDate(day.date)}
                           </text>
                         </g>
                       );

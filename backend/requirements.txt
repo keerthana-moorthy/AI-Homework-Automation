@@ -12,3 +12,4 @@ sentence-transformers
 transformers
 sympy
 faiss-cpu
+psycopg2-binary

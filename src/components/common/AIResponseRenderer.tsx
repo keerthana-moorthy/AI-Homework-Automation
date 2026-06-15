@@ -159,6 +159,35 @@ export const parseMarkdown = (text: string): Block[] => {
   return blocks;
 };
 
+interface StructuredOcrSource {
+  summary?: string | null;
+  mainTopic?: string | null;
+  keyPoints?: string[] | null;
+  importantConcepts?: string[] | null;
+  detailedExplanation?: string | null;
+  finalAnswer?: string | null;
+  finalTakeaways?: string | null;
+  extractedText?: string | null;
+  questionText?: string | null;
+}
+
+const cleanStructuredText = (value?: string | null) => {
+  return String(value ?? '').replace(/\s+/g, ' ').trim();
+};
+
+const formatBulletSection = (items?: string[] | null) => {
+  if (!Array.isArray(items)) {
+    return '';
+  }
+
+  const bullets = items
+    .map((item) => cleanStructuredText(item))
+    .filter(Boolean)
+    .map((item) => `- ${item}`);
+
+  return bullets.join('\n');
+};
+
 // Renders inline styles: bold, italic, inline code, and links
 const renderInlineText = (text: string, hasCustomColor: boolean): React.ReactNode[] => {
   const regex = /(\*\*.*?\*\*|\*.*?\*|`.*?`|\[.*?\]\(.*?\))/g;
@@ -207,36 +236,71 @@ const renderInlineText = (text: string, hasCustomColor: boolean): React.ReactNod
   });
 };
 
-export const ensureOcrStructuredMarkdown = (text: string): string => {
-  if (!text) return '';
-  const trimmed = text.trim();
-
-  // Check if it already has the structured headers (specifically # Summary)
-  if (/#\s*Summary/i.test(trimmed) || /##\s*Main Topic/i.test(trimmed)) {
-    return trimmed;
+export const ensureOcrStructuredMarkdown = (
+  input: string | StructuredOcrSource | null | undefined,
+): string => {
+  if (typeof input === 'string') {
+    const extractedText = input.trim();
+    if (!extractedText) {
+      return '';
+    }
+    if (/#\s*Summary/i.test(extractedText) || /##\s*Main Topic/i.test(extractedText) || /##\s*Extracted Text/i.test(extractedText)) {
+      return extractedText;
+    }
+    return `## Extracted Text\n${extractedText}`;
   }
 
-  // Split into paragraphs to construct structure
-  const paragraphs = trimmed.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-  const title = paragraphs[0] ? paragraphs[0].slice(0, 100) : 'Scanned Homework Content';
-
-  let mainTopic = title;
-  let keyPoints = '';
-  let importantConcepts = '';
-  let detailedAnalysis = '';
-
-  if (paragraphs.length === 1) {
-    keyPoints = `- Extracted document text\n- Ready for homework solver`;
-    importantConcepts = `- Automated scan and text extraction`;
-    detailedAnalysis = paragraphs[0];
-  } else if (paragraphs.length >= 2) {
-    mainTopic = paragraphs[0];
-    keyPoints = paragraphs.slice(1, Math.min(3, paragraphs.length)).map(p => `- ${p}`).join('\n');
-    importantConcepts = `- Concept identified in text: ${title}`;
-    detailedAnalysis = paragraphs.slice(1).join('\n\n');
+  if (!input) {
+    return '';
   }
 
-  return `# Summary\nThe uploaded homework document has been scanned and processed successfully.\n\n## Main Topic\n${mainTopic}\n\n## Key Points\n${keyPoints || '- Content scanned successfully.'}\n\n## Important Concepts\n${importantConcepts || '- Subject concepts analysis.'}\n\n## Detailed Analysis\n${detailedAnalysis}\n\n## Final Takeaways\nReview the step-by-step instructions below to solve and master this topic.`;
+  const sections: string[] = [];
+
+  const summary = cleanStructuredText(input.summary);
+  if (summary) {
+    sections.push(`# Summary\n${summary}`);
+  }
+
+  const mainTopic = cleanStructuredText(input.mainTopic);
+  if (mainTopic) {
+    sections.push(`## Main Topic\n${mainTopic}`);
+  }
+
+  const keyPoints = formatBulletSection(input.keyPoints);
+  if (keyPoints) {
+    sections.push(`## Key Points\n${keyPoints}`);
+  }
+
+  const importantConcepts = formatBulletSection(input.importantConcepts);
+  if (importantConcepts) {
+    sections.push(`## Important Concepts\n${importantConcepts}`);
+  }
+
+  const detailedExplanation = cleanStructuredText(input.detailedExplanation);
+  if (detailedExplanation) {
+    sections.push(`## Detailed Analysis\n${detailedExplanation}`);
+  }
+
+  const finalAnswer = cleanStructuredText(input.finalAnswer);
+  if (finalAnswer) {
+    sections.push(`## Final Answer\n${finalAnswer}`);
+  }
+
+  const finalTakeaways = cleanStructuredText(input.finalTakeaways);
+  if (finalTakeaways) {
+    sections.push(`## Final Takeaways\n${finalTakeaways}`);
+  }
+
+  const extractedText = String(input.extractedText ?? '').trim();
+  if (extractedText) {
+    sections.push(`## Extracted Text\n${extractedText}`);
+  }
+
+  if (!sections.length && input.questionText) {
+    return `## Question\n${cleanStructuredText(input.questionText)}`;
+  }
+
+  return sections.join('\n\n');
 };
 
 export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from .assistant_prompts import build_assistant_prompt
 from .llm_router import get_llm_router
 from .common import normalize_text
-
 
 def _format_steps(steps: Any) -> list[str]:
     if not isinstance(steps, list):
@@ -38,7 +38,11 @@ def _collect_context_lines(analysis: dict[str, Any] | None) -> list[str]:
         f"Source type: {normalize_text(analysis.get('sourceType') or scan.get('sourceKind') or 'text')}",
         f"File name: {normalize_text(analysis.get('fileName') or scan.get('fileName')) or 'Not available'}",
         f"Summary: {normalize_text(analysis.get('summary') or scan.get('summary')) or 'Not available'}",
+        f"Main topic: {normalize_text(analysis.get('mainTopic') or scan.get('mainTopic')) or 'Not available'}",
+        f"Key points: {normalize_text(', '.join(analysis.get('keyPoints') or scan.get('keyPoints') or [])) or 'Not available'}",
+        f"Important concepts: {normalize_text(', '.join(analysis.get('importantConcepts') or scan.get('importantConcepts') or [])) or 'Not available'}",
         f"Detailed explanation: {normalize_text(analysis.get('detailedExplanation') or scan.get('detailedExplanation')) or 'Not available'}",
+        f"Final takeaways: {normalize_text(analysis.get('finalTakeaways') or scan.get('finalTakeaways')) or 'Not available'}",
         f"Final answer: {normalize_text(analysis.get('finalAnswer')) or 'Not available'}",
         f"Extracted text: {normalize_text(analysis.get('extractedText') or scan.get('extractedText')) or 'Not available'}",
     ]
@@ -179,23 +183,14 @@ def answer_explanation_chat(
         language_rule = "Answer in simple English."
 
     context_block = "\n".join(_collect_context_lines(analysis))
+    system_prompt = build_assistant_prompt(
+        task="tutor",
+        language_rule=language_rule,
+        extra_rules="Do not reveal internal reasoning steps. Ground every answer in the provided homework context.",
+    )
     messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are Vidya AI, a friendly homework tutor inside the explanation page. "
-                "Your main job is to explain the scanned homework, the OCR text, the summary section, the detailed explanation, and each solution step. "
-                "Stay grounded in the provided context. Do not invent questions, numbers, or steps that are not in the scan. "
-                "If the student asks about an unclear scan, explain what the scan captured and what they should upload again. "
-                "Also explain the scan section itself when asked: what OCR means, what the summary means, and how to read the extracted text. "
-                f"{language_rule} "
-                "Use short paragraphs and clear step-by-step guidance."
-            ),
-        },
-        {
-            "role": "system",
-            "content": f"Homework context:\n{context_block}",
-        },
+        {"role": "system", "content": system_prompt},
+        {"role": "system", "content": f"Homework context:\n{context_block}"},
     ]
 
     reply = ""

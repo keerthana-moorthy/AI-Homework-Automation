@@ -43,6 +43,11 @@ try:  # Optional dependency for OCR.
 except Exception:  # pragma: no cover - handled at runtime.
     easyocr = None
 
+try:  # Optional dependency for PaddleOCR (newer OCR engine)
+    from paddleocr import PaddleOCR  # type: ignore
+except Exception:  # pragma: no cover - handled at runtime.
+    PaddleOCR = None
+
 
 EASYOCR_MODEL_DIR = EASYOCR_MODULE_PATH / "model"
 
@@ -145,6 +150,74 @@ def _extract_easyocr_text(image_bytes: bytes) -> tuple[str, float]:
     return normalize_text(" ".join(texts)), float(sum(confidences) / len(confidences)) if confidences else 0.0
 
 
+@lru_cache(maxsize=1)
+def _paddleocr_reader(language: str = "en"):
+    if PaddleOCR is None:
+        return None
+    try:
+        # Instantiate a PaddleOCR reader. Keep parameters conservative for compatibility.
+        return PaddleOCR(use_angle_cls=True, lang=language)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _extract_paddleocr_text(image_bytes: bytes, language: str = "en") -> tuple[str, float]:
+    reader = _paddleocr_reader(language)
+    if reader is None:
+        return "", 0.0
+
+    try:
+        image = _image_to_array(image_bytes)
+        if image is None:
+            return "", 0.0
+
+        # PaddleOCR expects RGB images; convert if we have cv2 available.
+        if cv2 is not None:
+            try:
+                rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            except Exception:
+                rgb = image
+        else:
+            rgb = image
+
+        raw_results = reader.ocr(rgb, cls=True)
+    except Exception:  # noqa: BLE001
+        return "", 0.0
+
+    texts: list[str] = []
+    confidences: list[float] = []
+
+    # PaddleOCR return formats vary slightly across versions. Flatten safely.
+    def _collect_from(obj):
+        if not obj:
+            return
+        if isinstance(obj, (list, tuple)):
+            for itm in obj:
+                if isinstance(itm, (list, tuple)) and len(itm) >= 2:
+                    # Typical leaf: [bbox, (text, conf)] or [bbox, [text, conf]]
+                    maybe_text = itm[1]
+                    if isinstance(maybe_text, (list, tuple)) and len(maybe_text) >= 1 and isinstance(maybe_text[0], str):
+                        text = normalize_text(maybe_text[0])
+                        conf = float(maybe_text[1]) if len(maybe_text) > 1 else 0.0
+                        if text:
+                            texts.append(text)
+                            confidences.append(conf)
+                    else:
+                        _collect_from(itm)
+
+    _collect_from(raw_results)
+
+    return normalize_text(" ".join(texts)), float(sum(confidences) / len(confidences)) if confidences else 0.0
+
+
+def _extract_modern_ocr_text(image_bytes: bytes, language: str = "en") -> tuple[str, float]:
+    # Prefer PaddleOCR if available, otherwise fall back to EasyOCR.
+    text, conf = _extract_paddleocr_text(image_bytes, language=language)
+    if text:
+        return text, conf
+    return _extract_easyocr_text(image_bytes)
+
+
 def _extract_llm_vision_text(
     *,
     image_bytes: bytes,
@@ -242,8 +315,9 @@ def _extract_pdf_page_ocr_candidates(
 
     candidates: list[tuple[str, float, str]] = []
 
-    easyocr_text, easyocr_conf = _extract_easyocr_text(_preprocess_image(image_bytes))
+    easyocr_text, easyocr_conf = _extract_modern_ocr_text(_preprocess_image(image_bytes))
     if easyocr_text:
+        # keep the tag name for compatibility
         candidates.append((easyocr_text, clamp(easyocr_conf or 0.7, 0.0, 1.0), "pdf-page-easyocr"))
 
     llm_text, llm_conf = _extract_llm_vision_text(
@@ -333,7 +407,7 @@ def extract_document_ocr(
     if file_bytes and route_decision.route != "direct-extraction" and route_decision.file_kind == "image":
         image_bytes = file_bytes
         image_bytes = _preprocess_image(file_bytes)
-        easyocr_text, easyocr_conf = _extract_easyocr_text(image_bytes)
+        easyocr_text, easyocr_conf = _extract_modern_ocr_text(image_bytes)
         if easyocr_text:
             candidates.append((easyocr_text, clamp(easyocr_conf or 0.7, 0.0, 1.0), "easyocr"))
 

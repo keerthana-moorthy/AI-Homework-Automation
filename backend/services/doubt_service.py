@@ -8,6 +8,7 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from .common import dedupe_preserve_order, normalize_text, top_keywords
+from .assistant_prompts import build_assistant_prompt
 from .llm_router import get_llm_router
 from .rag_service import get_rag_service
 from .translation_service import normalize_language_code, translate_text
@@ -277,7 +278,11 @@ def _build_context_summary(
                 f"Analysis ID: {analysis_payload.get('analysisId') or 'latest'}",
                 f"Homework question: {normalize_text(analysis_payload.get('questionText')) or normalize_text(scan.get('questionText')) or 'Not available'}",
                 f"Summary: {normalize_text(analysis_payload.get('summary')) or normalize_text(scan.get('summary')) or 'Not available'}",
+                f"Main topic: {normalize_text(analysis_payload.get('mainTopic')) or normalize_text(scan.get('mainTopic')) or 'Not available'}",
+                f"Key points: {normalize_text(', '.join(analysis_payload.get('keyPoints') or scan.get('keyPoints') or [])) or 'Not available'}",
+                f"Important concepts: {normalize_text(', '.join(analysis_payload.get('importantConcepts') or scan.get('importantConcepts') or [])) or 'Not available'}",
                 f"Detailed explanation: {normalize_text(analysis_payload.get('detailedExplanation')) or normalize_text(scan.get('detailedExplanation')) or 'Not available'}",
+                f"Final takeaways: {normalize_text(analysis_payload.get('finalTakeaways') or scan.get('finalTakeaways')) or 'Not available'}",
                 f"Final answer: {normalize_text(analysis_payload.get('finalAnswer')) or 'Not available'}",
             ]
         )
@@ -494,17 +499,18 @@ class DoubtService:
             if language == "both"
             else "Answer in simple English."
         )
-        system_prompt = (
-            "You are Vidya AI, a separate general-purpose assistant and study chatbot for the AI tutor app. "
-            "You are not tied to uploaded homework or scan context in this mode. "
-            "Answer the student's question directly, helpfully, and with confidence across study, coding, writing, brainstorming, and everyday questions. "
-            "If the question is unclear, ask one brief clarifying question. "
-            "If the student wants an explanation, break it down step by step. "
-            "If the student wants an example, give a concrete example. "
-            "If the student wants a quiz, give a short practice question. "
-            "Be friendly, productive, and concise but useful. "
-            "Do not mention homework uploads unless the user brings them up. "
-            f"{system_language}"
+        system_prompt = build_assistant_prompt(
+            task="general",
+            language_rule=system_language,
+            extra_rules=(
+                "You are not tied to uploaded homework or scan context in this mode. "
+                "Answer the student's question directly, helpfully, and with confidence across study, coding, writing, brainstorming, and everyday questions. "
+                "If the question is unclear, ask one brief clarifying question. "
+                "If the student wants an explanation, break it down step by step. "
+                "If the student wants an example, give a concrete example. "
+                "If the student wants a quiz, give a short practice question. "
+                "Do not mention homework uploads unless the user brings them up."
+            ),
         )
         intent_instruction = {
             "quiz": "When useful, end with one short practice question.",
@@ -751,12 +757,14 @@ class DoubtService:
         system_language = (
             "Answer in Tamil." if language == "ta" else "Answer in simple mixed Tamil and English." if language == "both" else "Answer in simple English."
         )
-        system_prompt = (
-            "You are Vidya AI, a grounded doubt-solving tutor for the same homework the student uploaded. "
-            "Only use the provided homework context, scan summary, detailed explanation, and retrieved passages. "
-            "If the answer is not present in the context, say what is missing and ask for a clearer upload or more details. "
-            "Explain step by step, using short paragraphs and student-friendly language. "
-            f"{system_language}"
+        system_prompt = build_assistant_prompt(
+            task="tutor",
+            language_rule=system_language,
+            extra_rules=(
+                "Only use the provided homework context, scan summary, detailed explanation, and retrieved passages. "
+                "If the answer is not present in the context, say what is missing and ask for a clearer upload or more details. "
+                "Explain step by step, using short paragraphs and student-friendly language."
+            ),
         )
         context_summary = _build_context_summary(
             analysis_payload=analysis_payload,

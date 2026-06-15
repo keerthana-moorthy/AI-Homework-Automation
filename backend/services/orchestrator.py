@@ -14,6 +14,7 @@ from .document_router import DocumentRouteDecision, route_document
 from .doubt_service import get_doubt_service
 from .llm_router import get_llm_router
 from .math_service import build_math_explanation, detect_math_problem, solve_math_question
+from .assistant_prompts import build_assistant_prompt
 from .ocr_service import extract_document_ocr
 from .quiz_service import get_quiz_service
 from .rag_service import get_rag_service
@@ -22,6 +23,7 @@ from .solver import explanation_from_analysis
 from .translation_service import translate_text
 from ..constants import EXPLANATION_TEMPLATE
 from ..models import HomeworkAnalysis, UserProfile
+from .document_parser import parse_extracted_text_sections
 
 
 @dataclass(slots=True)
@@ -89,7 +91,11 @@ def _generate_llm_explanation(
     prompt_context = {
         "questionText": analysis_payload.get("questionText"),
         "summary": analysis_payload.get("summary"),
+        "mainTopic": analysis_payload.get("mainTopic"),
+        "keyPoints": analysis_payload.get("keyPoints"),
+        "importantConcepts": analysis_payload.get("importantConcepts"),
         "detailedExplanation": analysis_payload.get("detailedExplanation"),
+        "finalTakeaways": analysis_payload.get("finalTakeaways"),
         "finalAnswer": analysis_payload.get("finalAnswer"),
         "subject": analysis_payload.get("detectedSubject"),
         "classification": analysis_payload.get("classification"),
@@ -97,13 +103,25 @@ def _generate_llm_explanation(
         "scan": analysis_payload.get("scan"),
         "retrievedContext": context_pack,
     }
-    system_prompt = (
-        "You are Vidya AI, a tutoring backend. Return a JSON object only. "
-        "The JSON must contain summary, detailedExplanation, steps, finalAnswer, problemType, "
-        "needsManualReview, and recommendations. "
-        "Explain the scanned homework step by step, grounded in the provided context. "
-        "If the homework is math-heavy, explain the reasoning rather than only giving the answer. "
-        "Keep the explanation suitable for a school student."
+    language_label = {
+        "en": "English",
+        "ta": "Tamil",
+        "both": "mixed Tamil and English",
+    }.get(language, language or "English")
+    system_prompt = build_assistant_prompt(
+        task="document",
+        language_rule=(
+            f"Keep language simple and suitable for a {language_label} response. "
+            "If the request is ambiguous, ask a brief clarifying question instead of guessing."
+        ),
+        extra_rules=(
+            "Return a JSON object only. The JSON must include the following keys: "
+            "summary, mainTopic, keyPoints, importantConcepts, detailedExplanation, steps, finalAnswer, "
+            "finalTakeaways, problemType, needsManualReview, and recommendations. "
+            "Use short, direct phrases for keyPoints and importantConcepts. "
+            "Do not repeat OCR noise, and do not invent facts. "
+            "Only cite details that are supported by the provided context."
+        ),
     )
     user_prompt = (
         f"Target language: {language}\n"
@@ -120,14 +138,39 @@ def _generate_llm_explanation(
     if not raw:
         return None
 
-    steps = _normalize_steps(raw.get("steps"))
+    # Accept new structured keys where available and map into legacy fields.
+    steps = _normalize_steps(raw.get("steps") or raw.get("stepList") or analysis_payload.get("steps"))
     if not steps:
         steps = _normalize_steps(analysis_payload.get("steps"))
+
+    # Prefer explicit short summary and mainTopic
+    summary_text = str(raw.get("summary") or raw.get("mainTopic") or analysis_payload.get("summary") or "")
+    main_topic = str(raw.get("mainTopic") or analysis_payload.get("mainTopic") or "")
+    if not main_topic and summary_text:
+        main_topic = summary_text.split(".")[0].strip()
+
+    # Map detailed analysis field variants
+    detailed = raw.get("detailedAnalysis") or raw.get("detailedExplanation") or raw.get("detailed") or analysis_payload.get("detailedExplanation") or ""
+
+    # Collect concise lists for key points and concepts
+    key_points = raw.get("keyPoints") if isinstance(raw.get("keyPoints"), list) else []
+    important_concepts = raw.get("importantConcepts") if isinstance(raw.get("importantConcepts"), list) else []
+    final_takeaways = str(
+        raw.get("finalTakeaways")
+        or raw.get("final_takeaways")
+        or analysis_payload.get("finalTakeaways")
+        or ""
+    )
+
     return {
-        "summary": str(raw.get("summary") or analysis_payload.get("summary") or ""),
-        "detailedExplanation": str(raw.get("detailedExplanation") or analysis_payload.get("detailedExplanation") or ""),
+        "summary": summary_text,
+        "mainTopic": main_topic,
+        "keyPoints": key_points,
+        "importantConcepts": important_concepts,
+        "detailedExplanation": str(detailed),
         "steps": steps,
         "finalAnswer": str(raw.get("finalAnswer") or analysis_payload.get("finalAnswer") or ""),
+        "finalTakeaways": final_takeaways,
         "problemType": str(raw.get("problemType") or analysis_payload.get("problemType") or "concept"),
         "needsManualReview": bool(raw.get("needsManualReview") or analysis_payload.get("needsManualReview") or False),
         "recommendations": raw.get("recommendations") if isinstance(raw.get("recommendations"), list) else analysis_payload.get("recommendations") or [],
@@ -245,6 +288,10 @@ class VidyaAICore:
                 "detectedSubject": classification.get("subject") or fallback_solution.get("detectedSubject"),
                 "recommendations": fallback_solution.get("recommendations") or [],
                 "steps": fallback_solution.get("steps") or [],
+                "mainTopic": "",
+                "keyPoints": [],
+                "importantConcepts": [],
+                "finalTakeaways": "",
             },
             "extractedText": ocr_result.get("raw_text") or raw_text,
             "pageCount": ocr_result.get("page_count") or route_decision.page_count or 0,
@@ -252,6 +299,10 @@ class VidyaAICore:
             "sourceType": route_decision.document_kind,
             "summary": "",
             "detailedExplanation": "",
+            "mainTopic": "",
+            "keyPoints": [],
+            "importantConcepts": [],
+            "finalTakeaways": "",
             "problemType": fallback_solution.get("problemType", "manual-review"),
             "steps": fallback_solution.get("steps", []),
             "finalAnswer": fallback_solution.get("finalAnswer"),
@@ -284,14 +335,24 @@ class VidyaAICore:
                 analysis_payload["status"] = "ok" if not llm_bundle.get("needsManualReview") else "needs_review"
                 analysis_payload["problemType"] = llm_bundle.get("problemType") or analysis_payload["problemType"]
                 analysis_payload["summary"] = llm_bundle.get("summary") or analysis_payload["summary"]
+                analysis_payload["mainTopic"] = llm_bundle.get("mainTopic") or analysis_payload.get("mainTopic") or ""
+                analysis_payload["keyPoints"] = llm_bundle.get("keyPoints") or analysis_payload.get("keyPoints") or []
+                analysis_payload["importantConcepts"] = llm_bundle.get("importantConcepts") or analysis_payload.get("importantConcepts") or []
                 analysis_payload["detailedExplanation"] = llm_bundle.get("detailedExplanation") or analysis_payload["detailedExplanation"]
                 analysis_payload["steps"] = llm_bundle.get("steps") or analysis_payload["steps"]
                 analysis_payload["finalAnswer"] = llm_bundle.get("finalAnswer") or analysis_payload["finalAnswer"]
+                analysis_payload["finalTakeaways"] = llm_bundle.get("finalTakeaways") or analysis_payload.get("finalTakeaways") or ""
                 analysis_payload["recommendations"] = llm_bundle.get("recommendations") or analysis_payload["recommendations"]
             else:
                 raw_preview = ocr_result.get("raw_text") or ""
-                analysis_payload["summary"] = analysis_payload["summary"] or (raw_preview[:220] if raw_preview else "The scan was processed.")
-                analysis_payload["detailedExplanation"] = analysis_payload["detailedExplanation"] or (
+                # If the OCR output looks like a markdown extraction or is noisy, try to parse it into structured fields.
+                cleaned = parse_extracted_text_sections(raw_preview)
+                analysis_payload["summary"] = analysis_payload["summary"] or cleaned.get("summary") or (raw_preview[:220] if raw_preview else "The scan was processed.")
+                analysis_payload["mainTopic"] = analysis_payload.get("mainTopic") or cleaned.get("mainTopic") or ""
+                analysis_payload["keyPoints"] = analysis_payload.get("keyPoints") or cleaned.get("keyPoints") or []
+                analysis_payload["importantConcepts"] = analysis_payload.get("importantConcepts") or cleaned.get("importantConcepts") or []
+                analysis_payload["finalTakeaways"] = analysis_payload.get("finalTakeaways") or cleaned.get("finalTakeaways") or ""
+                analysis_payload["detailedExplanation"] = analysis_payload["detailedExplanation"] or cleaned.get("detailedExplanation") or (
                     "The backend extracted the document and prepared a grounded explanation. "
                     "If you want a deeper step-by-step answer, open the explanation page and ask a doubt."
                 )
@@ -319,8 +380,21 @@ class VidyaAICore:
                 if isinstance(step, dict):
                     step["title"] = translate_text(step.get("title"), target_language=language)
                     step["desc"] = translate_text(step.get("desc") or step.get("description"), target_language=language)
+        # Translate newly added structured fields if present
+        if analysis_payload.get("mainTopic"):
+            analysis_payload["mainTopic"] = translate_text(analysis_payload.get("mainTopic"), target_language=language)
+        if isinstance(analysis_payload.get("keyPoints"), list):
+            analysis_payload["keyPoints"] = [translate_text(str(item), target_language=language) for item in analysis_payload.get("keyPoints")[:6]]
+        if isinstance(analysis_payload.get("importantConcepts"), list):
+            analysis_payload["importantConcepts"] = [translate_text(str(item), target_language=language) for item in analysis_payload.get("importantConcepts")[:6]]
+        if analysis_payload.get("finalTakeaways"):
+            analysis_payload["finalTakeaways"] = translate_text(analysis_payload.get("finalTakeaways"), target_language=language)
         analysis_payload["scan"]["summary"] = analysis_payload["summary"]
         analysis_payload["scan"]["detailedExplanation"] = analysis_payload["detailedExplanation"]
+        analysis_payload["scan"]["mainTopic"] = analysis_payload.get("mainTopic") or ""
+        analysis_payload["scan"]["keyPoints"] = analysis_payload.get("keyPoints") or []
+        analysis_payload["scan"]["importantConcepts"] = analysis_payload.get("importantConcepts") or []
+        analysis_payload["scan"]["finalTakeaways"] = analysis_payload.get("finalTakeaways") or ""
 
         return PipelineArtifacts(
             route_decision=route_decision.model_dump(),
@@ -410,6 +484,10 @@ class VidyaAICore:
             "detailedExplanation": (llm_bundle or {}).get("detailedExplanation")
             or analysis_payload.get("detailedExplanation")
             or "",
+            "mainTopic": (llm_bundle or {}).get("mainTopic") or analysis_payload.get("mainTopic") or "",
+            "keyPoints": (llm_bundle or {}).get("keyPoints") or analysis_payload.get("keyPoints") or [],
+            "importantConcepts": (llm_bundle or {}).get("importantConcepts") or analysis_payload.get("importantConcepts") or [],
+            "finalTakeaways": (llm_bundle or {}).get("finalTakeaways") or analysis_payload.get("finalTakeaways") or "",
             "scanMethod": analysis_payload.get("scanMethod") or analysis_payload.get("scan", {}).get("scanMethod"),
             "sourceType": analysis_payload.get("sourceType") or analysis_payload.get("scan", {}).get("sourceType"),
             "extractedText": analysis_payload.get("extractedText") or analysis_payload.get("scan", {}).get("extractedText"),
@@ -422,6 +500,32 @@ class VidyaAICore:
         }
         explanation["summary"] = translate_text(explanation["summary"], target_language=language)
         explanation["detailedExplanation"] = translate_text(explanation["detailedExplanation"], target_language=language)
+        # Ensure structured fields have sensible fallbacks when LLM did not provide them
+        classification = analysis_payload.get("classification") or {}
+        if not explanation.get("mainTopic"):
+            explanation["mainTopic"] = (
+                explanation["summary"].split(".")[0]
+                if explanation.get("summary") else classification.get("topic") or ""
+            )
+        if not explanation.get("keyPoints"):
+            # Prefer classification concepts as key points fallback
+            kp = classification.get("concepts") if isinstance(classification.get("concepts"), list) else []
+            if not kp:
+                # basic sentence split fallback
+                kp = [s.strip() for s in explanation["summary"].split(".") if s.strip()][:4]
+            explanation["keyPoints"] = kp
+        if not explanation.get("importantConcepts"):
+            ic = classification.get("concepts") if isinstance(classification.get("concepts"), list) else []
+            explanation["importantConcepts"] = ic
+
+        # Translate structured fields
+        explanation["mainTopic"] = translate_text(explanation.get("mainTopic") or "", target_language=language)
+        if isinstance(explanation.get("keyPoints"), list):
+            explanation["keyPoints"] = [translate_text(str(item), target_language=language) for item in explanation.get("keyPoints")[:6]]
+        if isinstance(explanation.get("importantConcepts"), list):
+            explanation["importantConcepts"] = [translate_text(str(item), target_language=language) for item in explanation.get("importantConcepts")[:6]]
+        if explanation.get("finalTakeaways"):
+            explanation["finalTakeaways"] = translate_text(explanation.get("finalTakeaways") or "", target_language=language)
         for step in explanation["steps"]:
             if isinstance(step, dict):
                 step["title"] = translate_text(step.get("title"), target_language=language)

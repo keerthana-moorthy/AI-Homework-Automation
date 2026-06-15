@@ -197,8 +197,15 @@ export const UploadView: React.FC = () => {
         setPendingResponse(response);
         
         setOcrStage('streaming');
-        const rawText = response.extractedText || response.questionText || 'No text extracted from document.';
-        const textToStream = ensureOcrStructuredMarkdown(rawText);
+        const textToStream = ensureOcrStructuredMarkdown({
+          summary: response.summary,
+          mainTopic: response.mainTopic,
+          keyPoints: response.keyPoints,
+          importantConcepts: response.importantConcepts,
+          detailedExplanation: response.detailedExplanation,
+          finalAnswer: response.finalAnswer,
+          finalTakeaways: response.finalTakeaways,
+        });
         
         let index = 0;
         const tokens = textToStream.split(/(\s+)/);

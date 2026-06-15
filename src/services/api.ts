@@ -107,6 +107,10 @@ export interface ExplanationPayload {
   analysisId: number | null;
   summary?: string;
   detailedExplanation?: string;
+  mainTopic?: string;
+  keyPoints?: string[];
+  importantConcepts?: string[];
+  finalTakeaways?: string;
   scanMethod?: string;
   sourceType?: string;
   extractedText?: string;
@@ -205,6 +209,10 @@ export interface HomeworkAnalyzeResponse {
   steps?: StepPayload[];
   summary?: string;
   detailedExplanation?: string;
+  mainTopic?: string;
+  keyPoints?: string[];
+  importantConcepts?: string[];
+  finalTakeaways?: string;
   scanMethod?: string;
   sourceType?: string;
   extractedText?: string;

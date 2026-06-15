@@ -119,6 +119,13 @@ export const ExplanationView: React.FC = () => {
   const steps = explanation?.steps?.length ? explanation.steps : [];
   const scanLabel = getScanLabel(explanation?.scanMethod, explanation?.sourceType);
   const fileUrl = resolveBackendUrl(explanation?.fileUrl);
+  const analysisMarkdown = ensureOcrStructuredMarkdown({
+    summary: explanation?.summary,
+    mainTopic: explanation?.mainTopic,
+    keyPoints: explanation?.keyPoints,
+    importantConcepts: explanation?.importantConcepts,
+    finalTakeaways: explanation?.finalTakeaways,
+  });
 
   return (
     <div className="space-y-6">
@@ -206,10 +213,10 @@ export const ExplanationView: React.FC = () => {
             </div>
           ) : null}
 
-          {explanation?.summary ? (
+          {analysisMarkdown ? (
             <div className="bg-white rounded-2xl p-4 border border-gray-100 shadow-sm space-y-2">
-              <h4 className="text-sm font-black text-gray-800">Scan Summary</h4>
-              <AIResponseRenderer content={explanation.summary} />
+              <h4 className="text-sm font-black text-gray-800">AI Analysis</h4>
+              <AIResponseRenderer content={analysisMarkdown} />
             </div>
           ) : null}
         </div>

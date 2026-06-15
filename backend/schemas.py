@@ -192,6 +192,10 @@ class HomeworkAnalyzeResponse(CamelModel):
     steps: list[dict[str, Any]] = Field(default_factory=list)
     summary: str | None = None
     detailed_explanation: str | None = None
+    main_topic: str | None = None
+    key_points: list[str] = Field(default_factory=list)
+    important_concepts: list[str] = Field(default_factory=list)
+    final_takeaways: str | None = None
     scan_method: str | None = None
     source_type: str | None = None
     extracted_text: str | None = None
@@ -327,6 +331,10 @@ class ExplanationOut(CamelModel):
     context_pack: dict[str, Any] | None = None
     summary: str | None = None
     detailed_explanation: str | None = None
+    main_topic: str | None = None
+    key_points: list[str] = Field(default_factory=list)
+    important_concepts: list[str] = Field(default_factory=list)
+    final_takeaways: str | None = None
     scan_method: str | None = None
     source_type: str | None = None
     extracted_text: str | None = None

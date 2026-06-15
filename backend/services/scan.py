@@ -6,6 +6,7 @@ import re
 from typing import Any
 
 from .solver import detect_subject
+from .assistant_prompts import build_assistant_prompt
 from .llm_router import get_llm_router
 
 try:  # Optional dependency for PDF rendering/text extraction.
@@ -162,22 +163,28 @@ def _call_llm_for_scan(
         {
             "type": "text",
             "text": (
-                "You are a homework OCR and tutoring assistant. "
-                "Analyze the scanned homework carefully and return valid JSON only. "
-                "The JSON must include questionText, extractedText, detectedSubject, problemType, summary, detailedExplanation, steps, confidence, needsManualReview, and recommendations. "
-                "For extractedText, instead of raw OCR text, generate a structured analysis in Markdown format using exactly the following headings:\n"
-                "# Summary\n"
-                "## Main Topic\n"
-                "## Key Points\n"
-                "## Important Concepts\n"
-                "## Detailed Analysis\n"
-                "## Final Takeaways\n"
-                "Use simple English suitable for a class 8 student. "
-                "Explain the concept or topic behind the question, not just the OCR text. "
-                "If the page has multiple questions, choose the primary one and mention the others in the summary. "
-                "Preserve equations exactly. "
-                "If there is already extracted PDF text, use it together with the images. "
-                "Prefer a concise, clean questionText that can be solved by the solver, and make detailedExplanation step-by-step and concept-focused."
+                build_assistant_prompt(
+                    task="document",
+                    language_rule=(
+                        {
+                            "en": "Answer in simple English and keep math symbols unchanged.",
+                            "ta": "Answer in simple Tamil and keep math symbols unchanged.",
+                            "both": "Answer in simple mixed Tamil and English and keep math symbols unchanged.",
+                        }.get(language, "Answer in simple English and keep math symbols unchanged.")
+                    ),
+                    extra_rules=(
+                        "Analyze the scanned homework carefully and return valid JSON only. "
+                        "The JSON must include questionText, extractedText, detectedSubject, problemType, summary, "
+                        "mainTopic, keyPoints, importantConcepts, detailedExplanation, finalTakeaways, steps, confidence, "
+                        "needsManualReview, and recommendations. "
+                        "For extractedText, provide the visible OCR text cleaned up for readability, not a generic study template. "
+                        "Explain the concept or topic behind the question only when it is supported by the page content. "
+                        "If the page has multiple questions, choose the primary one and mention the others in the summary. "
+                        "Preserve equations exactly. "
+                        "If there is already extracted PDF text, use it together with the images. "
+                        "Prefer a concise, clean questionText that can be solved by the solver, and make detailedExplanation step-by-step and concept-focused."
+                    ),
+                )
             ),
         }
     ]
@@ -257,6 +264,10 @@ def scan_homework_document(
         "questionText": fallback_text,
         "detailedExplanation": "",
         "summary": "",
+        "mainTopic": "",
+        "keyPoints": [],
+        "importantConcepts": [],
+        "finalTakeaways": "",
         "confidence": 0.5,
         "detectedSubject": detect_subject(subject, fallback_text, file_name=file_name),
         "problemType": "text-input",
@@ -324,6 +335,10 @@ def scan_homework_document(
                 or ""
             ),
             "summary": str(groq_result.get("summary") or ""),
+            "mainTopic": str(groq_result.get("mainTopic") or groq_result.get("main_topic") or ""),
+            "keyPoints": groq_result.get("keyPoints") if isinstance(groq_result.get("keyPoints"), list) else [],
+            "importantConcepts": groq_result.get("importantConcepts") if isinstance(groq_result.get("importantConcepts"), list) else [],
+            "finalTakeaways": str(groq_result.get("finalTakeaways") or groq_result.get("final_takeaways") or ""),
             "confidence": float(groq_result.get("confidence") or detected_subject.get("confidence", 0.5)),
             "detectedSubject": detected_subject,
             "problemType": str(groq_result.get("problemType") or groq_result.get("problem_type") or "manual-review"),

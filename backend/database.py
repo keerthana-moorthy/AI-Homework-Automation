@@ -92,7 +92,7 @@ except Exception:
 try:
     from sqlalchemy import text
     with engine.begin() as conn:
-        conn.execute(text("ALTER TABLE user_profiles ADD COLUMN is_registered BOOLEAN DEFAULT 0"))
+        conn.execute(text("ALTER TABLE user_profiles ADD COLUMN is_registered BOOLEAN DEFAULT FALSE"))
 except Exception:
     pass
 

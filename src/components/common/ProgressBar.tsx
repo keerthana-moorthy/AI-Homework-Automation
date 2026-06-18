@@ -24,7 +24,7 @@ export const ProgressBar: React.FC<ProgressBarProps> = ({
   const trackBg = color === 'white' ? 'bg-white/30' : 'bg-gray-100';
 
   return (
-    <div 
+    <div
       className={`w-full rounded-full overflow-hidden ${trackBg} ${className}`}
       style={{ height: `${height}px` }}
     >

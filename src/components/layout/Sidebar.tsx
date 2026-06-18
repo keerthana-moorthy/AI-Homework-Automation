@@ -11,10 +11,7 @@ import {
   Home,
   Camera,
   TrendingUp,
-  BrainCircuit,
   Zap,
-  Users,
-  HelpCircle,
   LogOut,
   MessageSquare,
   Calendar,
@@ -120,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
           {menuItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeScreen === item.screen;
-            const isLocked = item.protected && !isAuthenticated;
+            const isLocked = !!PROTECTED_SCREENS[item.screen] && !isAuthenticated;
 
             return (
               <button

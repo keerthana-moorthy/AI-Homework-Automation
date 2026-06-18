@@ -602,7 +602,27 @@ def build_parent_payload(db: Session, user: UserProfile) -> dict[str, Any]:
 
 
 def build_explanation_payload(db: Session, user: UserProfile, analysis_id: int | None = None) -> dict[str, Any]:
-    analysis_payload = analysis_payload_for_user(db, user, analysis_id)
+    row = None
+    if analysis_id is not None:
+        row = db.get(HomeworkAnalysis, analysis_id)
+        if row is not None and row.user_id != user.id:
+            row = None
+    if row is None:
+        row = latest_analysis_row(db, user)
+
+    if row is not None:
+        raw_payload = dict(row.raw_payload or {})
+        if "visualLearning" not in raw_payload or "studyNotes" not in raw_payload:
+            from .services.visual_learning import generate_visual_learning_and_notes
+            detailed_exp = raw_payload.get("detailedExplanation") or row.summary or ""
+            res = generate_visual_learning_and_notes(row.subject_id or row.detected_subject_id, row.question_text, detailed_exp)
+            raw_payload["visualLearning"] = res.get("visualLearning")
+            raw_payload["studyNotes"] = res.get("studyNotes")
+            row.raw_payload = raw_payload
+            db.add(row)
+            db.commit()
+
+    analysis_payload = analysis_payload_from_row(row)
     scan_payload = analysis_payload.get("scan") if analysis_payload else None
     explanation = explanation_from_analysis(analysis_payload)
     if analysis_payload and analysis_payload.get("status") == "ok":
@@ -627,6 +647,8 @@ def build_explanation_payload(db: Session, user: UserProfile, analysis_id: int |
             file_url=analysis_payload.get("fileUrl"),
             scan=scan_payload,
             detected_language=analysis_payload.get("detectedLanguage"),
+            visual_learning=analysis_payload.get("visualLearning"),
+            study_notes=analysis_payload.get("studyNotes"),
         ).model_dump(by_alias=True, exclude_none=True)
 
     # For upload/ocr pending states, show a useful intermediary explanation.
@@ -658,6 +680,8 @@ def build_explanation_payload(db: Session, user: UserProfile, analysis_id: int |
             "fileUrl": analysis_payload.get("fileUrl"),
             "scan": scan_payload,
             "detectedLanguage": analysis_payload.get("detectedLanguage"),
+            "visualLearning": analysis_payload.get("visualLearning"),
+            "studyNotes": analysis_payload.get("studyNotes"),
         }
 
     return {

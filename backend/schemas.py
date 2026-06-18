@@ -354,6 +354,8 @@ class ExplanationOut(CamelModel):
     file_type: str | None = None
     file_url: str | None = None
     scan: dict[str, Any] | None = None
+    visual_learning: dict[str, Any] | None = None
+    study_notes: dict[str, Any] | None = None
 
 
 class QuizStateOut(CamelModel):

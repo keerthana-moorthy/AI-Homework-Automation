@@ -115,6 +115,8 @@ export interface ExplanationPayload {
   fileType?: string;
   fileUrl?: string;
   scan?: JsonRecord;
+  visualLearning?: any;
+  studyNotes?: any;
 }
 
 export interface ExplanationChatMessage {

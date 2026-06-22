@@ -17,7 +17,7 @@ import {
   type ExplanationPayload,
 } from '../../services/api';
 import ExplanationChatPanel from './ExplanationChatPanel';
-import VisualLearningContainer from './VisualLearningWidgets';
+import VisualLearningContainer, { VisualLearningLoading } from './VisualLearningWidgets';
 import ProgressBar from '../../components/common/ProgressBar';
 
 import { 
@@ -91,10 +91,17 @@ const isImagePreview = (fileType?: string) => {
 export const ExplanationView: React.FC = () => {
   const dispatch = useAppDispatch();
   const [explanation, setExplanation] = useState<ExplanationPayload | null>(null);
+  const [explanationLoading, setExplanationLoading] = useState<boolean>(true);
   const chatSectionRef = useRef<HTMLDivElement>(null);
 
-  // Tab State
-  const [activeTab, setActiveTab] = useState<'explanation' | 'visual' | 'notes' | 'quiz'>('explanation');
+  // Tab State — read override from sessionStorage set by dashboard Visuals button
+  const [activeTab, setActiveTab] = useState<'explanation' | 'visual' | 'notes' | 'quiz'>(() => {
+    if (typeof window !== 'undefined') {
+      const override = window.sessionStorage.getItem('vidya-open-tab');
+      if (override === 'visual') return 'visual';
+    }
+    return 'explanation';
+  });
 
   // Study Notes Personal notebook scratchpad state
   const [personalNotes, setPersonalNotes] = useState<string>('');
@@ -113,10 +120,16 @@ export const ExplanationView: React.FC = () => {
 
     const loadExplanation = async () => {
       try {
+        setExplanationLoading(true);
         const response = await getExplanation(analysisId);
         if (!mounted) return;
         setExplanation(response);
-        
+
+        // Clear the tab override flag after consuming it
+        if (typeof window !== 'undefined') {
+          window.sessionStorage.removeItem('vidya-open-tab');
+        }
+
         // Load personal notes from local storage if available
         if (response.analysisId) {
           const saved = localStorage.getItem(`vidya_notes_${response.analysisId}`);
@@ -124,6 +137,8 @@ export const ExplanationView: React.FC = () => {
         }
       } catch (error) {
         console.error('Unable to load explanation', error);
+      } finally {
+        if (mounted) setExplanationLoading(false);
       }
     };
 
@@ -268,7 +283,30 @@ export const ExplanationView: React.FC = () => {
 
   return (
     <div className="space-y-6 font-nunito">
-      {/* Top Banner Card */}
+      {/* Full-page loading skeleton while explanation is fetching */}
+      {explanationLoading && (
+        <div className="space-y-5 animate-pulse">
+          <div className="h-20 bg-gradient-to-r from-purple-100 to-purple-50 rounded-3xl" />
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            <div className="lg:col-span-5 space-y-4">
+              <div className="h-40 bg-gray-100 rounded-2xl" />
+              <div className="h-16 bg-green-100 rounded-2xl" />
+            </div>
+            <div className="lg:col-span-7 space-y-4">
+              <div className="h-14 bg-gray-100 rounded-2xl" />
+              <div className="h-64 bg-white border border-gray-100 rounded-3xl flex items-center justify-center">
+                <div className="text-center space-y-2">
+                  <div className="w-10 h-10 border-4 border-brand-purple border-t-transparent rounded-full animate-spin mx-auto" />
+                  <p className="text-xs font-extrabold text-gray-400">Loading explanation…</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!explanationLoading && (
+      <>
       <div className="flex items-center justify-between bg-gradient-to-br from-brand-purple to-[#9B7ABF] text-white p-5 rounded-3xl shadow-sm">
         <div className="flex items-center gap-3">
           <Button variant="back" onClick={() => void handleNavigate(2)} />
@@ -301,7 +339,7 @@ export const ExplanationView: React.FC = () => {
             </h4>
             {explanation?.extractedText ? (
               <div className="mt-4 bg-white/80 rounded-xl p-4 border border-white/70">
-                <div className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Extracted text</div>
+                <div className="text-[10px] font-black text-gray-500 uppercase tracking-wider mb-2">Study Breakdown</div>
                 <div className="text-sm font-semibold leading-6 text-gray-700">
                   <AIResponseRenderer content={ensureOcrStructuredMarkdown(explanation.extractedText)} />
                 </div>
@@ -457,15 +495,7 @@ export const ExplanationView: React.FC = () => {
                 {explanation?.visualLearning ? (
                   <VisualLearningContainer data={explanation.visualLearning} />
                 ) : (
-                  <div className="bg-white rounded-3xl p-8 border border-gray-100 shadow-sm text-center space-y-4">
-                    <div className="w-12 h-12 rounded-full bg-brand-orange/10 text-brand-orange flex items-center justify-center mx-auto text-xl animate-spin-slow">
-                      ⚙️
-                    </div>
-                    <h4 className="font-extrabold text-sm text-gray-700">Analyzing Homework Concepts...</h4>
-                    <p className="text-xs text-gray-500 font-semibold max-w-xs mx-auto leading-relaxed">
-                      Vidya AI is extracting educational diagrams, map coordinates, and process steps. This takes just a moment.
-                    </p>
-                  </div>
+                  <VisualLearningLoading />
                 )}
               </div>
             )}
@@ -709,6 +739,7 @@ export const ExplanationView: React.FC = () => {
           </div>
         </div>
       </div>
+      </> )} {/* end !explanationLoading */}
     </div>
   );
 };

@@ -165,6 +165,7 @@ def _call_llm_for_scan(
                 "You are a homework OCR and tutoring assistant. "
                 "Analyze the scanned homework carefully and return valid JSON only. "
                 "The JSON must include questionText, extractedText, detectedSubject, problemType, summary, detailedExplanation, steps, confidence, needsManualReview, and recommendations. "
+                "For the summary field, generate a concise summary of the topic or chapter (1-2 sentences) in simple, age-appropriate language suitable for a class 8 student, based entirely on the homework content. DO NOT include any system processing details (like 'OCR complete', 'scan processed', or 'document converted successfully'). "
                 "For extractedText, instead of raw OCR text, generate a structured analysis in Markdown format using exactly the following headings:\n"
                 "# Summary\n"
                 "## Main Topic\n"
@@ -172,6 +173,7 @@ def _call_llm_for_scan(
                 "## Important Concepts\n"
                 "## Detailed Analysis\n"
                 "## Final Takeaways\n"
+                "All sections under extractedText must be fully educational, student-focused, and based entirely on the homework content, containing no system-generated status messages. "
                 "Use simple English suitable for a class 8 student. "
                 "Explain the concept or topic behind the question, not just the OCR text. "
                 "If the page has multiple questions, choose the primary one and mention the others in the summary. "
@@ -265,19 +267,23 @@ def scan_homework_document(
     }
 
     if not file_bytes:
-        if fallback_text:
-            page_scan["summary"] = "The question was entered as typed text."
-        else:
+        if not fallback_text:
             page_scan["needsManualReview"] = True
-            page_scan["summary"] = "No file or question text was provided."
-        return page_scan
-
-    pdf_context = _extract_pdf_text_and_pages(file_bytes) if source_kind == "pdf" else {
-        "pageCount": 1,
-        "pageTexts": [],
-        "pageImages": [{"pageNum": 1, "imageDataUrl": _encode_image_data_url(file_bytes, file_type or "image/png")}],
-        "combinedText": "",
-    }
+            page_scan["summary"] = "Please provide some homework text or upload a document to begin learning."
+            return page_scan
+        pdf_context = {
+            "pageCount": 0,
+            "pageTexts": [],
+            "pageImages": [],
+            "combinedText": "",
+        }
+    else:
+        pdf_context = _extract_pdf_text_and_pages(file_bytes) if source_kind == "pdf" else {
+            "pageCount": 1,
+            "pageTexts": [],
+            "pageImages": [{"pageNum": 1, "imageDataUrl": _encode_image_data_url(file_bytes, file_type or "image/png")}],
+            "combinedText": "",
+        }
 
     extracted_text = fallback_text or pdf_context.get("combinedText", "")
 
@@ -342,17 +348,25 @@ def scan_homework_document(
         page_scan["finalAnswer"] = str(groq_result.get("final_answer"))
 
     if not page_scan["summary"]:
-        if source_kind == "pdf":
-            page_scan["summary"] = "The homework was scanned from a PDF. The OCR text was cleaned and prepared for analysis."
-        elif source_kind == "image":
-            page_scan["summary"] = "The homework was scanned from an image and the visible text was extracted."
+        subject_id = (page_scan.get("detectedSubject") or {}).get("id") or "general_knowledge"
+        if subject_id == "maths":
+            page_scan["summary"] = "This mathematics homework focuses on solving problems, equations, and geometry concepts step-by-step."
+        elif subject_id == "science":
+            page_scan["summary"] = "This science topic involves investigating concepts, processes, and labeled illustrations from the document to learn how they work."
+        elif subject_id == "history":
+            page_scan["summary"] = "This homework covers a historical topic. We will explore the key events, figures, and kingdoms described in the text to understand their significance."
+        elif subject_id == "geography":
+            page_scan["summary"] = "This homework explores geography and landforms. We will analyze the geographical features, maps, and concepts presented in the document."
         else:
-            page_scan["summary"] = "The homework was entered as text."
+            page_scan["summary"] = "This homework review covers key concepts and questions. We will analyze the core ideas and walk through the solutions together."
 
-    if not page_scan["detailedExplanation"] and question_text:
-        page_scan["detailedExplanation"] = (
-            f"The scan detected the question: {question_text}. "
-            "Use the extracted text to continue the step-by-step solution."
-        )
+    if not page_scan["detailedExplanation"]:
+        if question_text:
+            page_scan["detailedExplanation"] = (
+                f"Let's look at the question: \"{question_text}\". "
+                "We will explore the concepts behind it and go through the steps together to find the solution."
+            )
+        else:
+            page_scan["detailedExplanation"] = "We will explore the concepts in this homework and walk through the step-by-step explanations together."
 
     return page_scan

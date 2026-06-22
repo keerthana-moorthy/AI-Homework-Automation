@@ -61,6 +61,20 @@ export const DashboardView: React.FC = () => {
   const handleResumeHomework = async (analysisId: number) => {
     if (typeof window !== 'undefined') {
       window.sessionStorage.setItem('vidya-latest-analysis-id', String(analysisId));
+      window.sessionStorage.removeItem('vidya-open-tab');
+    }
+    dispatch(setActiveScreen(3));
+    try {
+      await updateScreen(3);
+    } catch (error) {
+      console.error('Unable to persist screen change', error);
+    }
+  };
+
+  const handleResumeToVisuals = async (analysisId: number) => {
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.setItem('vidya-latest-analysis-id', String(analysisId));
+      window.sessionStorage.setItem('vidya-open-tab', 'visual');
     }
     dispatch(setActiveScreen(3));
     try {
@@ -328,17 +342,24 @@ export const DashboardView: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0 self-end sm:self-auto">
-                        <Badge variant={getBadgeVariant(hw.subjectId) as any} className="text-[10px] uppercase font-extrabold px-2.5 py-0.5">
-                          {hw.subjectEmoji} {hw.subjectName}
-                        </Badge>
-                        <button
-                          type="button"
-                          onClick={() => handleResumeHomework(hw.analysisId)}
-                          className="bg-brand-orange text-white border-none py-1.5 px-4 rounded-xl text-xs font-black shadow-[0_3px_0_#C84B1E] hover:translate-y-[1px] hover:shadow-[0_2px_0_#C84B1E] active:translate-y-[3px] active:shadow-none transition-all cursor-pointer outline-none"
-                        >
-                          Resume ⚡
-                        </button>
+                        <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                          <Badge variant={getBadgeVariant(hw.subjectId) as any} className="text-[10px] uppercase font-extrabold px-2.5 py-0.5">
+                            {hw.subjectEmoji} {hw.subjectName}
+                          </Badge>
+                          <button
+                            type="button"
+                            onClick={() => void handleResumeToVisuals(hw.analysisId)}
+                            className="bg-brand-purple text-white border-none py-1.5 px-3 rounded-xl text-xs font-black shadow-[0_3px_0_#5B3E87] hover:translate-y-[1px] hover:shadow-[0_2px_0_#5B3E87] active:translate-y-[3px] active:shadow-none transition-all cursor-pointer outline-none whitespace-nowrap"
+                          >
+                            🖼️ Visuals
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleResumeHomework(hw.analysisId)}
+                            className="bg-brand-orange text-white border-none py-1.5 px-4 rounded-xl text-xs font-black shadow-[0_3px_0_#C84B1E] hover:translate-y-[1px] hover:shadow-[0_2px_0_#C84B1E] active:translate-y-[3px] active:shadow-none transition-all cursor-pointer outline-none"
+                          >
+                            Resume ⚡
+                          </button>
                       </div>
                     </div>
                   );

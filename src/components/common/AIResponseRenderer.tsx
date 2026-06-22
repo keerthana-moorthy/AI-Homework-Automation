@@ -226,17 +226,17 @@ export const ensureOcrStructuredMarkdown = (text: string): string => {
   let detailedAnalysis = '';
 
   if (paragraphs.length === 1) {
-    keyPoints = `- Extracted document text\n- Ready for homework solver`;
-    importantConcepts = `- Automated scan and text extraction`;
+    keyPoints = `- Crucial details and facts from the text.\n- Relevant concepts to help understand the question.`;
+    importantConcepts = `- Key conceptual definitions in the homework.\n- Important points for exam preparation.`;
     detailedAnalysis = paragraphs[0];
   } else if (paragraphs.length >= 2) {
     mainTopic = paragraphs[0];
     keyPoints = paragraphs.slice(1, Math.min(3, paragraphs.length)).map(p => `- ${p}`).join('\n');
-    importantConcepts = `- Concept identified in text: ${title}`;
+    importantConcepts = `- Essential topic: ${title}\n- Core ideas described in the homework.`;
     detailedAnalysis = paragraphs.slice(1).join('\n\n');
   }
 
-  return `# Summary\nThe uploaded homework document has been scanned and processed successfully.\n\n## Main Topic\n${mainTopic}\n\n## Key Points\n${keyPoints || '- Content scanned successfully.'}\n\n## Important Concepts\n${importantConcepts || '- Subject concepts analysis.'}\n\n## Detailed Analysis\n${detailedAnalysis}\n\n## Final Takeaways\nReview the step-by-step instructions below to solve and master this topic.`;
+  return `# Summary\nHere is a student-focused summary and breakdown of the homework topic to help you understand the concepts.\n\n## Main Topic\n${mainTopic}\n\n## Key Points\n${keyPoints || '- Important definitions and concepts discussed in the question.'}\n\n## Important Concepts\n${importantConcepts || '- Core foundations of this topic.'}\n\n## Detailed Analysis\n${detailedAnalysis}\n\n## Final Takeaways\nReview the step-by-step instructions below to master this topic.`;
 };
 
 export const AIResponseRenderer: React.FC<AIResponseRendererProps> = ({

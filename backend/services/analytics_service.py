@@ -8,8 +8,8 @@ from sqlalchemy import desc, select
 from sqlalchemy.orm import Session
 
 from .common import clamp, normalize_text, top_keywords
-from ..constants import SUBJECTS
-from ..models import AdaptiveQuizAttempt, DoubtMessage, DoubtThread, HomeworkAnalysis, QuizAttempt, QuizQuestion, UserProfile
+from backend.constants import SUBJECTS
+from backend.models import AdaptiveQuizAttempt, DoubtMessage, DoubtThread, HomeworkAnalysis, QuizAttempt, QuizQuestion, UserProfile
 
 
 def _subject_map() -> dict[str, dict[str, Any]]:

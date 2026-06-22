@@ -128,7 +128,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
   const [hydratedKey, setHydratedKey] = useState<string | null>(null);
   const listEndRef = useRef<HTMLDivElement>(null);
 
-  const storageKey = `vidya-explanation-chat-${explanation?.analysisId ?? 'draft'}`;
+  const storageKey = explanation?.analysisId ? `vidya-explanation-chat-${explanation.analysisId}` : null;
   const scanLabel = getScanLabel(explanation?.scanMethod, explanation?.sourceType);
   const canChat = Boolean(
     explanation?.analysisId
@@ -148,7 +148,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
     };
     setHydratedKey(null);
 
-    if (typeof window === 'undefined') {
+    if (typeof window === 'undefined' || !storageKey) {
       setMessages([starterMessage]);
       setSuggestions(buildSuggestions(explanation));
       setInput('');
@@ -198,7 +198,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
   }, [explanation?.analysisId, explanation?.question, explanation?.summary, explanation?.detailedExplanation, explanation?.scanMethod, explanation?.sourceType, storageKey]);
 
   useEffect(() => {
-    if (typeof window === 'undefined' || hydratedKey !== storageKey) {
+    if (typeof window === 'undefined' || !storageKey || hydratedKey !== storageKey) {
       return;
     }
     window.localStorage.setItem(storageKey, JSON.stringify(messages.slice(-20)));
@@ -219,7 +219,7 @@ export const ExplanationChatPanel: React.FC<ExplanationChatPanelProps> = ({ expl
     setInput('');
     setError(null);
     setSuggestions(buildSuggestions(explanation));
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && storageKey) {
       window.localStorage.removeItem(storageKey);
     }
   };

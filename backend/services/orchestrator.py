@@ -98,12 +98,14 @@ def _generate_llm_explanation(
         "retrievedContext": context_pack,
     }
     system_prompt = (
-        "You are Vidya AI, a tutoring backend. Return a JSON object only. "
+        "You are Vidya AI, a friendly tutoring assistant. Return a JSON object only. "
         "The JSON must contain summary, detailedExplanation, steps, finalAnswer, problemType, "
         "needsManualReview, and recommendations. "
         "Explain the scanned homework step by step, grounded in the provided context. "
         "If the homework is math-heavy, explain the reasoning rather than only giving the answer. "
-        "Keep the explanation suitable for a school student."
+        "Keep the explanation suitable for a school student. "
+        "Write a student-focused summary of the topic (1-2 sentences) in simple, age-appropriate language. "
+        "Do not include any system/processing status messages (like 'OCR completed' or 'processing successful')."
     )
     user_prompt = (
         f"Target language: {language}\n"

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { Provider } from 'react-redux';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import DashboardLayout from './components/layout/DashboardLayout';
 import DashboardView from './features/dashboard/DashboardView';
 import ExplanationView from './features/explanation/ExplanationView';
@@ -10,21 +11,53 @@ import UploadView from './features/upload/UploadView';
 import TutorView from './features/tutor/TutorView';
 import StudyPlanView from './features/studyplan/StudyPlanView';
 import AuthModal from './components/auth/AuthModal';
-import { getSession, toUserState, getAuthStatus } from './services/api';
+import ProtectedRoute from './components/common/ProtectedRoute';
+import { getSession, toUserState, getAuthStatus, updateScreen } from './services/api';
 import {
   hydrateSession,
   setLoading,
   setIsAuthenticated,
   setShowAuthModal,
   setAuthModalContext,
+  setActiveScreen,
 } from './store/slices/appSlice';
 import store, { useAppDispatch, useAppSelector } from './store';
 
 const AUTH_TIMER_SECONDS = 30;
 
-const MainAppContent: React.FC = () => {
+// Helper to keep backend activeScreen synchronized with our frontend router
+const ROUTE_TO_SCREEN_MAP: Array<{ pattern: RegExp; screen: number }> = [
+  { pattern: /^\/dashboard/, screen: 0 },
+  { pattern: /^\/scan-homework/, screen: 2 },
+  { pattern: /^\/explanation/, screen: 3 },
+  { pattern: /^\/daily-quiz/, screen: 4 },
+  { pattern: /^\/quiz/, screen: 4 },
+  { pattern: /^\/my-progress/, screen: 5 },
+  { pattern: /^\/ai-tutor/, screen: 6 },
+  { pattern: /^\/study-plan/, screen: 7 },
+];
+
+const RouteSync: React.FC = () => {
+  const location = useLocation();
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector((state) => state.app.activeScreen);
+
+  useEffect(() => {
+    const matched = ROUTE_TO_SCREEN_MAP.find((m) => m.pattern.test(location.pathname));
+    if (matched && matched.screen !== activeScreen) {
+      dispatch(setActiveScreen(matched.screen));
+      void updateScreen(matched.screen).catch((error) => {
+        console.error('Unable to persist screen change', error);
+      });
+    }
+  }, [location.pathname, dispatch, activeScreen]);
+
+  return null;
+};
+
+const MainAppContent: React.FC = () => {
+  const dispatch = useAppDispatch();
+  const isLoggedIn = useAppSelector((state) => state.app.isLoggedIn);
   const loading = useAppSelector((state) => state.app.loading);
   const isAuthenticated = useAppSelector((state) => state.app.isAuthenticated);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -106,7 +139,7 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  if (activeScreen === 1) {
+  if (!isLoggedIn) {
     return (
       <>
         <OnboardingView />
@@ -115,22 +148,62 @@ const MainAppContent: React.FC = () => {
     );
   }
 
-  const renderActiveScreen = () => {
-    switch (activeScreen) {
-      case 0:  return <DashboardView />;
-      case 2:  return <UploadView />;
-      case 3:  return <ExplanationView />;
-      case 4:  return <QuizView />;
-      case 5:  return <ParentView />;
-      case 6:  return <TutorView />;
-      case 7:  return <StudyPlanView />;
-      default: return <DashboardView />;
-    }
-  };
-
   return (
     <>
-      <DashboardLayout>{renderActiveScreen()}</DashboardLayout>
+      <RouteSync />
+      <DashboardLayout>
+        <Routes>
+          <Route path="/" element={<Navigate to="/dashboard" replace />} />
+          <Route path="/dashboard" element={<DashboardView />} />
+          <Route
+            path="/scan-homework"
+            element={
+              <ProtectedRoute context="scan">
+                <UploadView />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/explanation/:analysisId" element={<ExplanationView />} />
+          <Route path="/explanation/:analysisId/visual-learning" element={<ExplanationView />} />
+          <Route path="/ai-tutor" element={<TutorView />} />
+          <Route path="/ai-tutor/chat/:id" element={<TutorView />} />
+          <Route
+            path="/study-plan"
+            element={
+              <ProtectedRoute context="studyplan">
+                <StudyPlanView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/study-plan/:planId"
+            element={
+              <ProtectedRoute context="studyplan">
+                <StudyPlanView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/daily-quiz"
+            element={
+              <ProtectedRoute context="quiz">
+                <QuizView />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/quiz/:quizId/result"
+            element={
+              <ProtectedRoute context="quiz">
+                <QuizView />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/my-progress" element={<ParentView />} />
+          <Route path="/my-progress/report/:id" element={<ParentView />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </DashboardLayout>
       {/* Global auth modal — rendered above everything */}
       <AuthModal />
     </>
@@ -140,7 +213,9 @@ const MainAppContent: React.FC = () => {
 export const App: React.FC = () => {
   return (
     <Provider store={store}>
-      <MainAppContent />
+      <BrowserRouter>
+        <MainAppContent />
+      </BrowserRouter>
     </Provider>
   );
 };

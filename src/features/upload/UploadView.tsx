@@ -1,9 +1,10 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useForm, Controller } from 'react-hook-form';
+import { useNavigate } from 'react-router-dom';
 import { yupResolver } from '@hookform/resolvers/yup';
 import * as yup from 'yup';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { hydrateSession, setActiveScreen, setSelectedSubjectId } from '../../store/slices/appSlice';
+import { hydrateSession, setSelectedSubjectId } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import FormTextArea from '../../components/form/FormTextArea';
 import FormUploadZone from '../../components/form/FormUploadZone';
@@ -50,6 +51,7 @@ interface UploadFormValues {
 
 export const UploadView: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const selectedSubjectId = useAppSelector((state) => state.app.selectedSubjectId ?? 'maths');
   const [selectedMethod, setSelectedMethod] = useState<'upload' | 'type' | 'voice'>('upload');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -81,7 +83,7 @@ export const UploadView: React.FC = () => {
     }
 
     await updateScreen(3);
-    dispatch(setActiveScreen(3));
+    navigate(`/explanation/${response.analysisId}`);
 
     const sessionResponse = await getSession();
     dispatch(
@@ -94,6 +96,7 @@ export const UploadView: React.FC = () => {
       })
     );
   };
+
 
   useEffect(() => {
     if (ocrStage !== 'complete') return;
@@ -241,7 +244,7 @@ export const UploadView: React.FC = () => {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-6">
       <div className="flex items-center gap-3 bg-brand-orange text-white p-5 rounded-3xl shadow-sm">
-        <Button variant="back" onClick={() => dispatch(setActiveScreen(0))}>←</Button>
+        <Button variant="back" onClick={() => navigate('/dashboard')}>←</Button>
         <div>
           <h3 className="text-base md:text-lg font-black">Scan & Upload Homework</h3>
           <p className="text-[11px] text-white/80 font-bold">Upload your question to get instant step-by-step solutions</p>

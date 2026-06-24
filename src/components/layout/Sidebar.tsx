@@ -1,8 +1,8 @@
 import React, { useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store';
 import {
   hydrateSession,
-  setActiveScreen,
   setIsAuthenticated,
   setShowAuthModal,
   setAuthModalContext,
@@ -33,22 +33,46 @@ const PROTECTED_SCREENS: Record<number, 'scan' | 'quiz' | 'studyplan'> = {
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
   const dispatch = useAppDispatch();
-  const activeScreen = useAppSelector((state) => state.app.activeScreen);
+  const location = useLocation();
+  const navigate = useNavigate();
   const isAuthenticated = useAppSelector((state) => state.app.isAuthenticated);
   const user = useAppSelector((state) => state.app.user);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const menuItems = [
-    { name: 'Dashboard', icon: Home, screen: 0 },
-    { name: 'Scan Homework', icon: Camera, screen: 2 },
-    { name: 'AI Tutor', icon: MessageSquare, screen: 6 },
-    { name: 'Study Plan', icon: Calendar, screen: 7 },
-    { name: 'Daily Quiz', icon: Zap, screen: 4 },
-    { name: 'My Progress', icon: TrendingUp, screen: 5 },
+    { name: 'Dashboard', icon: Home, path: '/dashboard', screen: 0 },
+    { name: 'Scan Homework', icon: Camera, path: '/scan-homework', screen: 2 },
+    { name: 'AI Tutor', icon: MessageSquare, path: '/ai-tutor', screen: 6 },
+    { name: 'Study Plan', icon: Calendar, path: '/study-plan', screen: 7 },
+    { name: 'Daily Quiz', icon: Zap, path: '/daily-quiz', screen: 4 },
+    { name: 'My Progress', icon: TrendingUp, path: '/my-progress', screen: 5 },
   ];
 
-  const handleNav = (screen: number) => {
-    const protectedContext = PROTECTED_SCREENS[screen];
+  const isActiveItem = (path: string) => {
+    const currentPath = location.pathname;
+    if (path === '/dashboard') {
+      return currentPath === '/dashboard' || currentPath === '/';
+    }
+    if (path === '/scan-homework') {
+      return currentPath.startsWith('/scan-homework') || currentPath.startsWith('/explanation');
+    }
+    if (path === '/ai-tutor') {
+      return currentPath.startsWith('/ai-tutor');
+    }
+    if (path === '/study-plan') {
+      return currentPath.startsWith('/study-plan');
+    }
+    if (path === '/daily-quiz') {
+      return currentPath.startsWith('/daily-quiz') || currentPath.startsWith('/quiz');
+    }
+    if (path === '/my-progress') {
+      return currentPath.startsWith('/my-progress');
+    }
+    return false;
+  };
+
+  const handleNav = (item: typeof menuItems[0]) => {
+    const protectedContext = PROTECTED_SCREENS[item.screen];
 
     // Gate: show auth modal instead of navigating if not authenticated
     if (protectedContext && !isAuthenticated) {
@@ -58,8 +82,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
       return;
     }
 
-    dispatch(setActiveScreen(screen));
-    void updateScreen(screen).catch((error) => {
+    navigate(item.path);
+    void updateScreen(item.screen).catch((error) => {
       console.error('Unable to persist screen change', error);
     });
     setIsOpen(false);
@@ -79,6 +103,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
         })
       );
       dispatch(setIsAuthenticated(false));
+      navigate('/');
       setIsOpen(false);
     } catch (error) {
       console.error('Unable to sign out', error);
@@ -117,13 +142,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
         <nav className="flex-1 px-4 py-6 space-y-1.5 overflow-y-auto">
           {menuItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeScreen === item.screen;
+            const isActive = isActiveItem(item.path);
             const isLocked = !!PROTECTED_SCREENS[item.screen] && !isAuthenticated;
 
             return (
               <button
                 key={item.name}
-                onClick={() => handleNav(item.screen)}
+                onClick={() => handleNav(item)}
                 title={isLocked ? `Sign in to access ${item.name}` : item.name}
                 className={`
                   w-full flex items-center gap-3 px-4 py-3 rounded-xl font-nunito font-extrabold text-sm transition-all duration-150

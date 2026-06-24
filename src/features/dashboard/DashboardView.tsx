@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { hydrateSession, setActiveScreen, setSelectedSubjectId, setUser } from '../../store/slices/appSlice';
+import { hydrateSession, setSelectedSubjectId, setUser } from '../../store/slices/appSlice';
 import { SUBJECTS } from '../../constants/mockData';
 import ProgressCard from '../../components/common/ProgressCard';
 import Badge from '../../components/common/Badge';
@@ -9,6 +10,7 @@ import { Calendar, BookOpen, Clock, CheckSquare, CheckCircle2, AlertTriangle, Ch
 
 export const DashboardView: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
   const user = useAppSelector((state) => state.app.user);
   const selectedSubjectId = useAppSelector((state) => state.app.selectedSubjectId);
   const [dashboard, setDashboard] = useState<Awaited<ReturnType<typeof getDashboard>> | null>(null);
@@ -52,37 +54,27 @@ export const DashboardView: React.FC = () => {
       }
     }
 
-    dispatch(setActiveScreen(targetScreen));
-    void updateScreen(targetScreen).catch((error) => {
-      console.error('Unable to persist screen change', error);
-    });
+    const screenToRoute: Record<number, string> = {
+      0: '/dashboard',
+      2: '/scan-homework',
+      4: '/daily-quiz',
+      5: '/my-progress',
+      6: '/ai-tutor',
+      7: '/study-plan',
+    };
+
+    const targetRoute = screenToRoute[targetScreen] || '/dashboard';
+    navigate(targetRoute);
   };
 
   const handleResumeHomework = async (analysisId: number) => {
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem('vidya-latest-analysis-id', String(analysisId));
-      window.sessionStorage.removeItem('vidya-open-tab');
-    }
-    dispatch(setActiveScreen(3));
-    try {
-      await updateScreen(3);
-    } catch (error) {
-      console.error('Unable to persist screen change', error);
-    }
+    navigate(`/explanation/${analysisId}`);
   };
 
   const handleResumeToVisuals = async (analysisId: number) => {
-    if (typeof window !== 'undefined') {
-      window.sessionStorage.setItem('vidya-latest-analysis-id', String(analysisId));
-      window.sessionStorage.setItem('vidya-open-tab', 'visual');
-    }
-    dispatch(setActiveScreen(3));
-    try {
-      await updateScreen(3);
-    } catch (error) {
-      console.error('Unable to persist screen change', error);
-    }
+    navigate(`/explanation/${analysisId}/visual-learning`);
   };
+
 
   const handleSubjectClick = async (subjectId: string) => {
     dispatch(setSelectedSubjectId(subjectId));

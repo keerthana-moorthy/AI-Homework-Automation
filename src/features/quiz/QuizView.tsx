@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { setActiveScreen, setUser } from '../../store/slices/appSlice';
+import { setUser } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import AIResponseRenderer from '../../components/common/AIResponseRenderer';
@@ -15,6 +16,8 @@ import {
 } from '../../services/api';
 
 export const QuizView: React.FC = () => {
+  const { quizId } = useParams<{ quizId: string }>();
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.app.user);
   const emailSuffix = user?.email || 'guest';
@@ -48,7 +51,9 @@ export const QuizView: React.FC = () => {
     setQuizMode(mode);
     setTempMode(mode);
 
-    setViewResults(localStorage.getItem(keyViewResults) === 'true');
+    // If route matches results page, force viewResults
+    const isResultRoute = window.location.pathname.endsWith('/result');
+    setViewResults(isResultRoute || localStorage.getItem(keyViewResults) === 'true');
     setReviewAnswers(localStorage.getItem(keyReviewAnswers) === 'true');
 
     try {
@@ -73,6 +78,9 @@ export const QuizView: React.FC = () => {
           localStorage.removeItem(keyUserAnswers);
           localStorage.removeItem(keyViewResults);
           localStorage.removeItem(keyReviewAnswers);
+          if (isResultRoute) {
+            navigate('/daily-quiz', { replace: true });
+          }
         }
       } catch (error) {
         console.error('Unable to load quiz', error);
@@ -84,7 +92,7 @@ export const QuizView: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [emailSuffix]);
+  }, [emailSuffix, navigate]);
 
   const currentQuestion = quizData?.currentQuestion ?? quizData?.questions?.[quizData?.currentIndex ?? 0];
   const progressPercent = quizData?.progressPercent ?? 0;
@@ -133,10 +141,7 @@ export const QuizView: React.FC = () => {
   };
 
   const handleBack = () => {
-    dispatch(setActiveScreen(0));
-    void updateScreen(0).catch((error) => {
-      console.error('Unable to persist screen change', error);
-    });
+    navigate('/dashboard');
   };
 
   const handleReset = async () => {
@@ -151,6 +156,7 @@ export const QuizView: React.FC = () => {
       localStorage.removeItem(keyUserAnswers);
       localStorage.removeItem(keyViewResults);
       localStorage.removeItem(keyReviewAnswers);
+      navigate('/daily-quiz');
     } catch (error) {
       console.error('Unable to reset quiz', error);
     }
@@ -164,7 +170,9 @@ export const QuizView: React.FC = () => {
   const handleViewResults = () => {
     setViewResults(true);
     localStorage.setItem(keyViewResults, 'true');
+    navigate('/quiz/session/result');
   };
+
 
   const getOptionClass = (option: string) => {
     if (!quizData || !currentQuestion) {

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { hydrateSession, setActiveScreen } from '../../store/slices/appSlice';
+import { hydrateSession } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import ProgressBar from '../../components/common/ProgressBar';
@@ -15,6 +16,8 @@ import {
 type ChartMetric = 'homework' | 'quizzes' | 'tutorSessions' | 'doubts' | 'studyTime';
 
 export const ParentView: React.FC = () => {
+  const { id: reportId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const currentUser = useAppSelector((state) => state.app.user);
   const currentLanguage = useAppSelector((state) => state.app.language);
@@ -60,11 +63,9 @@ export const ParentView: React.FC = () => {
   }, [currentLanguage, filter, currentUser?.email]);
 
   const handleBack = () => {
-    dispatch(setActiveScreen(0));
-    void updateScreen(0).catch((error) => {
-      console.error('Unable to persist screen change', error);
-    });
+    navigate('/dashboard');
   };
+
 
   const handleFilterChange = (val: string) => {
     setFilter(val);

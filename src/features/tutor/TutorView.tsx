@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import {
   Bot,
   User,
@@ -39,8 +40,9 @@ const createId = (prefix: string) => {
 };
 
 export const TutorView: React.FC = () => {
+  const { id: routeThreadId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const language = useAppSelector((state) => state.app.language);
-
 
   const user = useAppSelector((state) => state.app.user);
   const storageKey = user?.email
@@ -57,36 +59,49 @@ export const TutorView: React.FC = () => {
 
   const listEndRef = useRef<HTMLDivElement>(null);
 
-  // 1. Initialize and Load Threads from LocalStorage
+  // 1. Initialize and Load Threads from LocalStorage & Sync with Route
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
+    let loadedThreads: ChatThread[] = [];
     try {
       const stored = window.localStorage.getItem(storageKey);
       if (stored) {
         const parsed = JSON.parse(stored) as ChatThread[];
         if (Array.isArray(parsed) && parsed.length > 0) {
-          setThreads(parsed);
-          const sorted = [...parsed].sort((a, b) => b.timestamp - a.timestamp);
-          setActiveThreadId(sorted[0].id);
-          return;
+          loadedThreads = parsed;
         }
       }
     } catch (e) {
       console.warn('Failed to load chat threads', e);
     }
 
-    // Default Thread if none exists
-    const defaultThread: ChatThread = {
-      id: createId('thread'),
-      title: 'General Study Session',
-      messages: [],
-      threadId: null,
-      timestamp: Date.now(),
-    };
-    setThreads([defaultThread]);
-    setActiveThreadId(defaultThread.id);
-  }, [storageKey]);
+    if (loadedThreads.length === 0) {
+      const defaultThread: ChatThread = {
+        id: createId('thread'),
+        title: 'General Study Session',
+        messages: [],
+        threadId: null,
+        timestamp: Date.now(),
+      };
+      loadedThreads = [defaultThread];
+    }
+
+    setThreads(loadedThreads);
+
+    if (routeThreadId) {
+      const exists = loadedThreads.some((t) => t.id === routeThreadId);
+      if (exists) {
+        setActiveThreadId(routeThreadId);
+      } else {
+        const sorted = [...loadedThreads].sort((a, b) => b.timestamp - a.timestamp);
+        navigate(`/ai-tutor/chat/${sorted[0].id}`, { replace: true });
+      }
+    } else {
+      const sorted = [...loadedThreads].sort((a, b) => b.timestamp - a.timestamp);
+      navigate(`/ai-tutor/chat/${sorted[0].id}`, { replace: true });
+    }
+  }, [storageKey, routeThreadId]);
 
   // 2. Persist Threads to LocalStorage
   useEffect(() => {
@@ -111,13 +126,13 @@ export const TutorView: React.FC = () => {
       timestamp: Date.now(),
     };
     setThreads((current) => [newThread, ...current]);
-    setActiveThreadId(newThread.id);
+    navigate(`/ai-tutor/chat/${newThread.id}`);
     setIsHistoryOpen(false);
   };
 
   // Select a past thread
   const handleSelectThread = (thread: ChatThread) => {
-    setActiveThreadId(thread.id);
+    navigate(`/ai-tutor/chat/${thread.id}`);
     setIsHistoryOpen(false);
   };
 
@@ -125,6 +140,7 @@ export const TutorView: React.FC = () => {
   const handleDeleteThread = (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     const updated = threads.filter((t) => t.id !== id);
+    let nextActiveId = '';
     if (updated.length === 0) {
       const defaultThread: ChatThread = {
         id: createId('thread'),
@@ -134,14 +150,18 @@ export const TutorView: React.FC = () => {
         timestamp: Date.now(),
       };
       setThreads([defaultThread]);
-      setActiveThreadId(defaultThread.id);
+      nextActiveId = defaultThread.id;
     } else {
       setThreads(updated);
       if (activeThreadId === id) {
-        setActiveThreadId(updated[0].id);
+        nextActiveId = updated[0].id;
+      } else {
+        nextActiveId = activeThreadId || updated[0].id;
       }
     }
+    navigate(`/ai-tutor/chat/${nextActiveId}`);
   };
+
 
   // Submit doubt message
   const handleSendMessage = async (text: string) => {

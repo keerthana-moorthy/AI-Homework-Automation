@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { setActiveScreen, setUser } from '../../store/slices/appSlice';
+import { setUser } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
 import StepCard from '../../components/common/StepCard';
@@ -22,7 +23,7 @@ import ProgressBar from '../../components/common/ProgressBar';
 
 import { 
   BookOpen, 
-  Image as ImageIcon, 
+  ImageIcon, 
   FileText, 
   Award, 
   Copy, 
@@ -90,19 +91,41 @@ const isImagePreview = (fileType?: string) => {
 
 export const ExplanationView: React.FC = () => {
   const dispatch = useAppDispatch();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { analysisId: pathAnalysisId } = useParams<{ analysisId: string }>();
   const user = useAppSelector((state) => state.app.user);
   const [explanation, setExplanation] = useState<ExplanationPayload | null>(null);
   const [explanationLoading, setExplanationLoading] = useState<boolean>(true);
   const chatSectionRef = useRef<HTMLDivElement>(null);
 
-  // Tab State — read override from sessionStorage set by dashboard Visuals button
+  // Tab State
   const [activeTab, setActiveTab] = useState<'explanation' | 'visual' | 'notes' | 'quiz'>(() => {
-    if (typeof window !== 'undefined') {
-      const override = window.sessionStorage.getItem('vidya-open-tab');
-      if (override === 'visual') return 'visual';
+    if (location.pathname.endsWith('/visual-learning')) {
+      return 'visual';
     }
     return 'explanation';
   });
+
+  // Sync tab state from route path changes
+  useEffect(() => {
+    if (location.pathname.endsWith('/visual-learning')) {
+      setActiveTab('visual');
+    } else if (location.pathname.includes('/explanation/') && !location.pathname.endsWith('/visual-learning')) {
+      setActiveTab('explanation');
+    }
+  }, [location.pathname]);
+
+  const handleTabClick = (tab: 'explanation' | 'visual' | 'notes' | 'quiz') => {
+    const aid = explanation?.analysisId || pathAnalysisId;
+    if (tab === 'explanation') {
+      navigate(`/explanation/${aid}`);
+    } else if (tab === 'visual') {
+      navigate(`/explanation/${aid}/visual-learning`);
+    } else {
+      setActiveTab(tab);
+    }
+  };
 
   // Study Notes Personal notebook scratchpad state
   const [personalNotes, setPersonalNotes] = useState<string>('');
@@ -114,9 +137,7 @@ export const ExplanationView: React.FC = () => {
 
   useEffect(() => {
     let mounted = true;
-    const storedAnalysisId =
-      typeof window !== 'undefined' ? window.sessionStorage.getItem('vidya-latest-analysis-id') : null;
-    const parsedAnalysisId = storedAnalysisId ? Number(storedAnalysisId) : NaN;
+    const parsedAnalysisId = pathAnalysisId ? Number(pathAnalysisId) : NaN;
     const analysisId = Number.isFinite(parsedAnalysisId) ? parsedAnalysisId : null;
 
     const loadExplanation = async () => {
@@ -125,11 +146,6 @@ export const ExplanationView: React.FC = () => {
         const response = await getExplanation(analysisId);
         if (!mounted) return;
         setExplanation(response);
-
-        // Clear the tab override flag after consuming it
-        if (typeof window !== 'undefined') {
-          window.sessionStorage.removeItem('vidya-open-tab');
-        }
 
         // Load personal notes from local storage if available
         if (response.analysisId) {
@@ -148,7 +164,7 @@ export const ExplanationView: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [user?.email]);
+  }, [pathAnalysisId, user?.email]);
 
   // Sync quiz data if tab changes to Quiz
   useEffect(() => {
@@ -178,11 +194,17 @@ export const ExplanationView: React.FC = () => {
       }
     }
 
-    dispatch(setActiveScreen(screen));
-    void updateScreen(screen).catch((error) => {
-      console.error('Unable to persist screen change', error);
-    });
+    const screenToRoute: Record<number, string> = {
+      0: '/dashboard',
+      2: '/scan-homework',
+      4: '/daily-quiz',
+      5: '/my-progress',
+      6: '/ai-tutor',
+      7: '/study-plan',
+    };
+    navigate(screenToRoute[screen] || '/dashboard');
   };
+
 
   const focusChatBot = () => {
     setActiveTab('explanation');
@@ -406,7 +428,7 @@ export const ExplanationView: React.FC = () => {
           {/* Tab Selector Buttons */}
           <div className="flex flex-wrap items-center gap-1.5 p-1 bg-gray-100/80 rounded-2xl select-none">
             <button
-              onClick={() => setActiveTab('explanation')}
+              onClick={() => handleTabClick('explanation')}
               className={`flex-1 min-w-[90px] flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none active:scale-95
                 ${activeTab === 'explanation'
                   ? 'bg-brand-purple text-white shadow-sm font-extrabold'
@@ -416,7 +438,7 @@ export const ExplanationView: React.FC = () => {
               <span>📖</span> Explanation
             </button>
             <button
-              onClick={() => setActiveTab('visual')}
+              onClick={() => handleTabClick('visual')}
               className={`flex-1 min-w-[90px] flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none active:scale-95
                 ${activeTab === 'visual'
                   ? 'bg-brand-orange text-white shadow-sm font-extrabold'
@@ -426,7 +448,7 @@ export const ExplanationView: React.FC = () => {
               <span>🖼</span> Visual Learning
             </button>
             <button
-              onClick={() => setActiveTab('notes')}
+              onClick={() => handleTabClick('notes')}
               className={`flex-1 min-w-[90px] flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none active:scale-95
                 ${activeTab === 'notes'
                   ? 'bg-brand-blue text-white shadow-sm font-extrabold'
@@ -436,7 +458,7 @@ export const ExplanationView: React.FC = () => {
               <span>📝</span> Notes
             </button>
             <button
-              onClick={() => setActiveTab('quiz')}
+              onClick={() => handleTabClick('quiz')}
               className={`flex-1 min-w-[90px] flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black transition-all cursor-pointer border-none outline-none active:scale-95
                 ${activeTab === 'quiz'
                   ? 'bg-brand-green text-white shadow-sm font-extrabold'

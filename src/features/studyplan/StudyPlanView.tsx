@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useAppDispatch, useAppSelector } from '../../store';
-import { setActiveScreen, setUser } from '../../store/slices/appSlice';
+import { setUser } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import FormUploadZone from '../../components/form/FormUploadZone';
 import AIResponseRenderer from '../../components/common/AIResponseRenderer';
@@ -44,6 +45,8 @@ const chunkText = (text: string, wordsPerChunk: number = 300): string[] => {
 };
 
 export const StudyPlanView: React.FC = () => {
+  const { planId: pathPlanId } = useParams<{ planId: string }>();
+  const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const user = useAppSelector((state) => state.app.user);
   const subscriptionPlan = user?.subscriptionPlan || 'Free';
@@ -155,7 +158,24 @@ export const StudyPlanView: React.FC = () => {
     setLoading(true);
     const loadAll = async () => {
       try {
-        const plan = await getLatestStudyPlan();
+        const historyData = await getStudyPlanHistory();
+        if (!mounted) return;
+        setHistoryPlans(historyData.plans);
+        setHistoryLimit(historyData.limit);
+        setHistoryUsed(historyData.used);
+
+        let plan: StudyPlan | null = null;
+        if (pathPlanId) {
+          const matched = historyData.plans.find(p => String(p.id) === pathPlanId);
+          if (matched) {
+            plan = matched;
+          }
+        }
+
+        if (!plan) {
+          plan = await getLatestStudyPlan();
+        }
+
         if (mounted) {
           if (plan) {
             setStudyPlan(plan);
@@ -168,16 +188,12 @@ export const StudyPlanView: React.FC = () => {
             if (firstUncompletedDay) {
               setExpandedDay(firstUncompletedDay.dayNum);
             }
+            if (pathPlanId && String(plan.id) !== pathPlanId) {
+              navigate(`/study-plan/${plan.id}`, { replace: true });
+            }
           } else {
             setStudyPlan(null);
           }
-        }
-
-        const historyData = await getStudyPlanHistory();
-        if (mounted) {
-          setHistoryPlans(historyData.plans);
-          setHistoryLimit(historyData.limit);
-          setHistoryUsed(historyData.used);
         }
       } catch (err) {
         console.error('Failed to load study plan data', err);
@@ -191,14 +207,12 @@ export const StudyPlanView: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, [user?.email]);
+  }, [user?.email, pathPlanId]);
 
   const handleBack = () => {
-    dispatch(setActiveScreen(0));
-    void updateScreen(0).catch((err) => {
-      console.error('Failed to update active screen', err);
-    });
+    navigate('/dashboard');
   };
+
 
   const handleGenerate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1045,8 +1059,7 @@ export const StudyPlanView: React.FC = () => {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  setStudyPlan(item);
-                                  setExpandedDay(item.planData.find(day => day.tasks.some(t => !t.completed))?.dayNum || 1);
+                                  navigate(`/study-plan/${item.id}`);
                                 }}
                                 className="px-3 py-1.5 bg-gray-50 hover:bg-orange-50 hover:text-brand-orange border border-gray-150 rounded-xl text-xs font-black cursor-pointer transition flex items-center gap-1"
                               >

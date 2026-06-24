@@ -10,8 +10,11 @@ from datetime import datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
+import contextvars
+
+current_user_email: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_user_email", default=None)
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import StreamingResponse
 from sqlalchemy import desc, func, select
@@ -90,6 +93,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def extract_auth_email(request: Request, call_next):
+    auth_header = request.headers.get("Authorization")
+    email = None
+    if auth_header and auth_header.startswith("Bearer "):
+        email = auth_header[len("Bearer "):].strip().lower()
+    
+    token = current_user_email.set(email)
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        current_user_email.reset(token)
 
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
@@ -234,6 +251,11 @@ def seed_database(db: Session) -> UserProfile:
 
 
 def get_primary_user(db: Session) -> UserProfile:
+    email = current_user_email.get()
+    if email:
+        user = db.scalar(select(UserProfile).where(UserProfile.email == email))
+        if user is not None:
+            return user
     user = db.scalar(select(UserProfile).order_by(UserProfile.id.asc()))
     if user is None:
         user = seed_database(db)
@@ -860,6 +882,18 @@ def _hash_password(password: str) -> str:
 @app.get("/api/auth/status")
 def auth_status(db: Session = Depends(get_db)) -> dict:
     """Returns whether the user has registered credentials and is currently logged in."""
+    email = current_user_email.get()
+    if email:
+        user = db.scalar(select(UserProfile).where(UserProfile.email == email))
+        if user is not None and user.is_registered:
+            if not user.logged_in:
+                user.logged_in = True
+                db.add(user)
+                db.commit()
+            return {
+                "registered": True,
+                "loggedIn": True,
+            }
     user = get_primary_user(db)
     return {
         "registered": bool(getattr(user, "is_registered", False)),
@@ -870,41 +904,46 @@ def auth_status(db: Session = Depends(get_db)) -> dict:
 @app.post("/api/auth/register")
 async def auth_register(payload: AuthRegisterRequest, db: Session = Depends(get_db)) -> dict:
     """Register with name/class/email/password. Resets profile to fresh start (0 XP, 0 streak)."""
-    user = get_primary_user(db)
+    email = payload.email.strip().lower()
 
     # Check email not already taken
-    if getattr(user, "is_registered", False) and user.email:
-        raise HTTPException(status_code=409, detail="An account already exists. Please sign in instead.")
+    existing = db.scalar(select(UserProfile).where(UserProfile.email == email))
+    if existing is not None:
+        raise HTTPException(status_code=409, detail="An account with this email already exists. Please sign in to continue.")
 
     # Minimal email validation
-    if "@" not in payload.email or "." not in payload.email.split("@")[-1]:
+    if "@" not in email or "." not in email.split("@")[-1]:
         raise HTTPException(status_code=400, detail="Please enter a valid email address.")
 
     if len(payload.password) < 6:
         raise HTTPException(status_code=400, detail="Password must be at least 6 characters.")
 
-    # ── Reset profile to fresh start ────────────────────────────────────────
-    user.name = payload.name.strip()
-    user.class_name = payload.class_name.strip()
-    user.email = payload.email.strip().lower()
-    user.hashed_password = _hash_password(payload.password)
-    user.is_registered = True
-    user.logged_in = True
-    user.active_screen = 0
-    # Reset gamification
-    user.xp_points = 0
-    user.streak = 0
-    user.level = level_for_xp(0)
-    user.homework_completed = 0
-    user.doubts_solved = 0
-    user.quiz_correct = 0
-    user.quiz_answered = 0
-    user.quiz_current_index = 0
-    user.quiz_selected_option = None
-    user.quiz_status = "idle"
-    user.quiz_xp_earned_this_session = 0
-    touch_user_level(user)
+    # Create new user profile
+    user = UserProfile(
+        name=payload.name.strip(),
+        class_name=payload.class_name.strip(),
+        email=email,
+        hashed_password=_hash_password(payload.password),
+        is_registered=True,
+        logged_in=True,
+        active_screen=0,
+        xp_points=0,
+        streak=0,
+        level=level_for_xp(0),
+        homework_completed=0,
+        doubts_solved=0,
+        quiz_correct=0,
+        quiz_answered=0,
+        quiz_current_index=0,
+        quiz_selected_option=None,
+        quiz_status="idle",
+        quiz_xp_earned_this_session=0,
+        subscription_plan="Free",
+    )
     db.add(user)
+    db.flush()
+    
+    db.add(Subscription(user_id=user.id, plan_name=user.subscription_plan, status="active"))
     db.commit()
     db.refresh(user)
 
@@ -915,13 +954,11 @@ async def auth_register(payload: AuthRegisterRequest, db: Session = Depends(get_
 @app.post("/api/auth/login")
 async def auth_login(payload: AuthLoginRequest, db: Session = Depends(get_db)) -> dict:
     """Sign in with email + password."""
-    user = get_primary_user(db)
+    email = payload.email.strip().lower()
+    user = db.scalar(select(UserProfile).where(UserProfile.email == email))
 
-    if not getattr(user, "is_registered", False) or not user.email:
+    if user is None or not user.is_registered:
         raise HTTPException(status_code=404, detail="No account found. Please register first.")
-
-    if user.email != payload.email.strip().lower():
-        raise HTTPException(status_code=401, detail="Invalid email or password.")
 
     if user.hashed_password != _hash_password(payload.password):
         raise HTTPException(status_code=401, detail="Invalid email or password.")

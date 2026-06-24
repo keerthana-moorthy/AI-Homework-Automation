@@ -42,6 +42,11 @@ export const TutorView: React.FC = () => {
   const language = useAppSelector((state) => state.app.language);
 
 
+  const user = useAppSelector((state) => state.app.user);
+  const storageKey = user?.email
+    ? `vidya-ai-tutor-threads-general_${user.email}`
+    : 'vidya-ai-tutor-threads-general_guest';
+
   // Chat State
   const [threads, setThreads] = useState<ChatThread[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -57,7 +62,7 @@ export const TutorView: React.FC = () => {
     if (typeof window === 'undefined') return;
 
     try {
-      const stored = window.localStorage.getItem('vidya-ai-tutor-threads-general');
+      const stored = window.localStorage.getItem(storageKey);
       if (stored) {
         const parsed = JSON.parse(stored) as ChatThread[];
         if (Array.isArray(parsed) && parsed.length > 0) {
@@ -81,13 +86,13 @@ export const TutorView: React.FC = () => {
     };
     setThreads([defaultThread]);
     setActiveThreadId(defaultThread.id);
-  }, []);
+  }, [storageKey]);
 
   // 2. Persist Threads to LocalStorage
   useEffect(() => {
     if (threads.length === 0) return;
-    window.localStorage.setItem('vidya-ai-tutor-threads-general', JSON.stringify(threads));
-  }, [threads]);
+    window.localStorage.setItem(storageKey, JSON.stringify(threads));
+  }, [threads, storageKey]);
 
   // 3. Scroll to Bottom
   useEffect(() => {

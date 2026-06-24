@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useAppDispatch } from '../../store';
+import { useAppDispatch, useAppSelector } from '../../store';
 import { setActiveScreen, setUser } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
@@ -90,6 +90,7 @@ const isImagePreview = (fileType?: string) => {
 
 export const ExplanationView: React.FC = () => {
   const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.app.user);
   const [explanation, setExplanation] = useState<ExplanationPayload | null>(null);
   const [explanationLoading, setExplanationLoading] = useState<boolean>(true);
   const chatSectionRef = useRef<HTMLDivElement>(null);
@@ -147,7 +148,7 @@ export const ExplanationView: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [user?.email]);
 
   // Sync quiz data if tab changes to Quiz
   useEffect(() => {

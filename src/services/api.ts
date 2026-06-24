@@ -17,6 +17,11 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json');
   }
 
+  const token = typeof window !== 'undefined' ? localStorage.getItem('vidya_auth_email') : null;
+  if (token) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+
   const response = await fetch(`${API_BASE}${path}`, {
     ...init,
     headers,
@@ -249,6 +254,7 @@ export const toUserState = (user: Partial<UserState> | null | undefined): Partia
     streak: typeof user?.streak === 'number' ? user.streak : 0,
     xpPoints: typeof user?.xpPoints === 'number' ? user.xpPoints : 0,
     level: user?.level ?? 'Bronze',
+    email: user?.email,
     language: user?.language,
     loggedIn: user?.loggedIn,
     activeScreen: user?.activeScreen,
@@ -282,7 +288,13 @@ export const fileToBase64 = async (file: File) => {
 export const getHealth = () => request<JsonRecord>('/health');
 export const getSession = () => request<SessionEnvelope>('/api/session');
 export const login = () => request<SessionEnvelope>('/api/session/login', { method: 'POST' });
-export const logout = () => request<SessionEnvelope>('/api/session/logout', { method: 'POST' });
+export const logout = async () => {
+  const res = await request<SessionEnvelope>('/api/session/logout', { method: 'POST' });
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem('vidya_auth_email');
+  }
+  return res;
+};
 
 // ── Auth endpoints ──────────────────────────────────────────────────────────
 export interface AuthStatusResponse { registered: boolean; loggedIn: boolean; }
@@ -291,16 +303,26 @@ export interface AuthLoginPayload { email: string; password: string; }
 export interface AuthEnvelope extends SessionEnvelope { dashboard?: JsonRecord; }
 
 export const getAuthStatus = () => request<AuthStatusResponse>('/api/auth/status');
-export const authRegister = (p: AuthRegisterPayload) =>
-  request<AuthEnvelope>('/api/auth/register', {
+export const authRegister = async (p: AuthRegisterPayload) => {
+  const res = await request<AuthEnvelope>('/api/auth/register', {
     method: 'POST',
     body: JSON.stringify({ name: p.name, class_name: p.className, email: p.email, password: p.password }),
   });
-export const authLogin = (p: AuthLoginPayload) =>
-  request<AuthEnvelope>('/api/auth/login', {
+  if (typeof window !== 'undefined' && res.user?.email) {
+    localStorage.setItem('vidya_auth_email', res.user.email);
+  }
+  return res;
+};
+export const authLogin = async (p: AuthLoginPayload) => {
+  const res = await request<AuthEnvelope>('/api/auth/login', {
     method: 'POST',
     body: JSON.stringify({ email: p.email, password: p.password }),
   });
+  if (typeof window !== 'undefined' && res.user?.email) {
+    localStorage.setItem('vidya_auth_email', res.user.email);
+  }
+  return res;
+};
 // ───────────────────────────────────────────────────────────────────────────
 
 export const updateScreen = (activeScreen: number) =>

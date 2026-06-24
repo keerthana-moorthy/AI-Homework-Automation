@@ -1,6 +1,6 @@
 import logging
+import json
 from typing import Any
-from sqlalchemy.orm import Session
 from .llm_router import get_llm_router
 
 LOGGER = logging.getLogger(__name__)
@@ -19,34 +19,50 @@ def generate_visual_learning_and_notes(
         subject_normalized = "mathematics"
     elif subject_normalized in {"gk", "general_knowledge", "general knowledge"}:
         subject_normalized = "general"
-    elif subject_normalized not in {"science", "geography", "history", "mathematics"}:
-        subject_normalized = "general"
 
-    # Define system instruction
+    # Define system instruction with strict routing matrix and context isolation
     system_prompt = (
-        "You are an educational AI visual content and notes builder. "
-        "Analyze the provided homework question, subject, and detailed explanation, and return a JSON object containing "
-        "visualLearning and studyNotes. "
-        "Choose the most appropriate visualType for this topic:\n"
-        "1. 'map': Best for geography places (plains, deserts, rivers, plates) or historical paths (kingdom borders, explorers). "
-        "Required elements schema: {\"locations\": [{\"label\": \"Name\", \"icon\": \"relevant emoji\", \"description\": \"Details\", \"x\": integer 0-100, \"y\": integer 0-100}]}\n"
-        "2. 'timeline': Best for history timelines, historical events, freedom fighters epochs, or sequential evolutionary cycles. "
-        "Required elements schema: {\"events\": [{\"period\": \"Year/Range\", \"icon\": \"relevant emoji\", \"title\": \"Event Name\", \"description\": \"Details\", \"importance\": \"high\"|\"medium\"|\"low\"}]}\n"
-        "3. 'comparison': Best for comparing concepts (e.g. Plains vs Mountains, Ancient Kingdom vs another, DNA vs RNA). "
-        "Required elements schema: {\"headers\": [\"Attribute\", \"Concept A\", \"Concept B\"], \"rows\": [{\"attribute\": \"Feature\", \"values\": [\"valA\", \"valB\"]}]}\n"
-        "4. 'diagram': Best for science processes (water cycle, photosynthesis, heart circulation) where nodes connect sequentially. "
-        "Required elements schema: {\"steps\": [{\"stepNum\": integer, \"icon\": \"relevant single emoji representing this stage (e.g. ☀️ for sun/heat, ☁️ for clouds, 💧 for water, 🌿 for plant/transpiration, 🌧️ for rain, 🔬 for microscopy, 🧬 for DNA)\", \"title\": \"Step Name\", \"description\": \"Details\", \"x\": integer 0-100, \"y\": integer 0-100}]}\n"
-        "5. 'labeled_visual': Best for anatomical diagrams (human heart, cell structure) or detailed layouts. "
-        "Required elements schema: {\"hotspots\": [{\"label\": \"Part Name\", \"icon\": \"relevant emoji\", \"description\": \"Functional description\", \"x\": integer 0-100, \"y\": integer 0-100}]}\n"
-        "6. 'math_formula': Best for math geometry, algebra formulas, or physics equations. "
-        "Required elements schema: {\"latex\": \"LaTeX string\", \"variables\": [{\"symbol\": \"x\", \"name\": \"Var\", \"description\": \"desc\", \"min\": num, \"max\": num, \"default\": num}], \"plottingExpression\": \"JS compatible expression e.g. a * x * x\", \"xRange\": [num, num], \"yRange\": [num, num]}\n\n"
-        "IMPORTANT: For diagram steps and labeled_visual hotspots, always include a relevant single emoji in the 'icon' field that visually represents that specific stage or component. "
-        "Provide rich educational detail, matching the subject rules. "
-        "The response JSON must contain ONLY the top-level keys 'visualLearning' and 'studyNotes'. Do not include extra wrappers."
+        "You are an intelligent educational Visual Learning Engine.\n"
+        "Analyze the provided homework question, subject, and detailed explanation.\n"
+        "Your task is to generate the most appropriate visual representation based strictly on the current homework context.\n"
+        "Do NOT reuse visuals, topics, or generated content from other sessions. Context isolation is mandatory.\n\n"
+        "Based on the subject, you MUST select one of the following dynamic visual tools and provide its corresponding JSON schema.\n\n"
+        "ROUTING MATRIX:\n"
+        "- Mathematics -> \"geogebra\" (Generates a math expression to be plotted)\n"
+        "- Geography -> \"openstreetmap\" (Generates geographic coordinates and markers for maps)\n"
+        "- History -> \"timelinejs\" (Generates historical timeline events)\n"
+        "- Computer Science, Social Science, English, Economics -> \"mermaid\" (Generates Mermaid.js syntax for flowcharts, mind maps, architecture diagrams)\n"
+        "- Biology, Physics, Chemistry, Environmental Science, General Science -> \"ai_image\" (Generates an educational diagram or image generation prompt)\n\n"
+        "OUTPUT JSON SCHEMA:\n"
+        "The output must be a single JSON object with EXACTLY TWO top-level keys: \"visualLearning\" and \"studyNotes\".\n\n"
+        "For \"visualLearning\":\n"
+        "{\n"
+        "  \"tool\": \"mermaid\" | \"geogebra\" | \"openstreetmap\" | \"timelinejs\" | \"ai_image\",\n"
+        "  \"subject\": \"Detected Subject\",\n"
+        "  \"topic\": \"Detected Topic\",\n"
+        "  \"payload\": { ... tool specific payload ... }\n"
+        "}\n\n"
+        "PAYLOAD FORMATS:\n"
+        "1. mermaid: {\"code\": \"graph TD\\nA[Start] --> B[End]\"}\n"
+        "2. geogebra: {\"expression\": \"y = x^2\", \"description\": \"Graph of a parabola\"}\n"
+        "3. openstreetmap: {\"center\": [latitude, longitude], \"zoom\": 5, \"markers\": [{\"position\": [lat, lng], \"label\": \"Location Name\", \"description\": \"Details\"}]}\n"
+        "4. timelinejs: {\"events\": [{\"year\": \"1947\", \"title\": \"Event\", \"description\": \"Details\"}]}\n"
+        "5. ai_image: {\"prompt\": \"Detailed description of the diagram to generate\", \"labels\": [\"Part 1\", \"Part 2\"]}\n\n"
+        "For \"studyNotes\":\n"
+        "{\n"
+        "  \"keyConcepts\": [\"String array of core extracted concepts\"],\n"
+        "  \"keyVocabulary\": [{\"term\": \"Word\", \"definition\": \"Def\"}],\n"
+        "  \"formulasOrFacts\": [\"String array of facts\"],\n"
+        "  \"summaryMarkdown\": \"Brief markdown summary of the explanation\"\n"
+        "}\n\n"
+        "IMPORTANT RULES:\n"
+        "- MUST ONLY output valid JSON. No markdown wrappers around the JSON.\n"
+        "- Do NOT use hardcoded examples or placeholder static data.\n"
+        "- Ensure geography doesn't generate math, history doesn't generate science, etc.\n"
     )
 
     user_prompt = (
-        f"Subject: {subject_id}\n"
+        f"Subject: {subject_normalized}\n"
         f"Question: {question_text}\n"
         f"Detailed Explanation: {detailed_explanation}\n\n"
         "Generate the custom interactive visual learning payload and comprehensive revision study notes."
@@ -59,14 +75,14 @@ def generate_visual_learning_and_notes(
                 task="explanation",
                 system_prompt=system_prompt,
                 user_prompt=user_prompt,
-                temperature=0.3
+                temperature=0.2
             )
             if raw and "visualLearning" in raw and "studyNotes" in raw:
-                # Basic validation
                 vl = raw["visualLearning"]
                 sn = raw["studyNotes"]
-                if all(k in vl for k in ["concept", "subject", "visualType", "title", "elements"]) and \
-                   all(k in sn for k in ["keyConcepts", "keyVocabulary", "formulasOrFacts"]):
+                
+                # Validation check for new schema
+                if "tool" in vl and "payload" in vl:
                     return {
                         "visualLearning": vl,
                         "studyNotes": sn
@@ -78,41 +94,21 @@ def generate_visual_learning_and_notes(
     concept_detected = question_text[:40] + "..." if len(question_text) > 40 else question_text
     
     fallback_vl = {
-        "concept": concept_detected,
+        "tool": "mermaid",
         "subject": subject_normalized,
-        "visualType": "comparison",
-        "title": "Key Concepts Overview",
-        "description": f"Visual summary for: '{concept_detected}'",
-        "elements": {
-            "headers": ["Term/Idea", "Summary", "Context"],
-            "rows": [
-                {
-                    "attribute": "Main Topic",
-                    "values": [concept_detected, "Derived from homework question."]
-                },
-                {
-                    "attribute": "Details",
-                    "values": ["See explanation for more info.", "Used to build core understanding."]
-                }
-            ]
+        "topic": "Overview",
+        "payload": {
+            "code": f"graph TD\\n  A[Homework Question] --> B[{json.dumps(concept_detected).strip('\"')}]"
         }
     }
     
     fallback_sn = {
-        "keyConcepts": [
-            "Read the question carefully to extract variables and core events.",
-            "Breaking down concepts step-by-step makes complex subjects highly approachable."
-        ],
-        "keyVocabulary": [
-            {"term": "Topic Concept", "definition": concept_detected}
-        ],
-        "formulasOrFacts": [
-            "Review the primary explanation for specific details."
-        ],
-        "summaryMarkdown": f"This study note is summarized from the homework question regarding: **{concept_detected}**. \n\n{detailed_explanation[:500]}..." if detailed_explanation else "Review the detailed explanation provided."
+        "keyConcepts": ["Context could not be fully analyzed. Please retry."],
+        "keyVocabulary": [{"term": "Topic Concept", "definition": concept_detected}],
+        "formulasOrFacts": ["Review the primary explanation for specific details."],
+        "summaryMarkdown": f"This study note is summarized from the homework question regarding: **{concept_detected}**."
     }
 
-    # Return structured fallback
     return {
         "visualLearning": fallback_vl,
         "studyNotes": fallback_sn

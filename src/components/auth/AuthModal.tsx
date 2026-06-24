@@ -195,9 +195,24 @@ export const AuthModal: React.FC = () => {
         {/* ── Form body ── */}
         <div className="px-6 pb-6 pt-4">
           {error && (
-            <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-xs font-bold px-3 py-2.5 rounded-xl flex items-start gap-2">
-              <span className="text-base shrink-0">⚠️</span>
-              {error}
+            <div className="mb-4 bg-red-50 border border-red-200 text-red-600 text-xs font-bold px-3 py-2.5 rounded-xl flex flex-col gap-1">
+              <div className="flex items-start gap-2">
+                <span className="text-base shrink-0">⚠️</span>
+                <span>{error}</span>
+              </div>
+              {error.toLowerCase().includes('already exists') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLoginEmail(email);
+                    setTab('signin');
+                    setError('');
+                  }}
+                  className="mt-1.5 self-start text-xs font-black text-brand-orange hover:underline cursor-pointer border-none bg-transparent outline-none p-0"
+                >
+                  👉 Switch to Sign In Tab now
+                </button>
+              )}
             </div>
           )}
 

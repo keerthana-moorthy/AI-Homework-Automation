@@ -57,7 +57,7 @@ export const ParentView: React.FC = () => {
 
   useEffect(() => {
     void loadParentData(filter, customStartDate, customEndDate);
-  }, [currentLanguage, filter]);
+  }, [currentLanguage, filter, currentUser?.email]);
 
   const handleBack = () => {
     dispatch(setActiveScreen(0));

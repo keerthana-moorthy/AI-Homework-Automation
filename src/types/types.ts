@@ -59,6 +59,7 @@ export interface UserState {
   streak: number;
   xpPoints: number;
   level: string;
+  email?: string | null;
   language?: 'en' | 'ta' | 'both';
   loggedIn?: boolean;
   activeScreen?: number;

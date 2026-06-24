@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useAppDispatch } from '../../store';
+import { useAppDispatch, useAppSelector } from '../../store';
 import { setActiveScreen, setUser } from '../../store/slices/appSlice';
 import Button from '../../components/common/Button';
 import Badge from '../../components/common/Badge';
@@ -16,38 +16,47 @@ import {
 
 export const QuizView: React.FC = () => {
   const dispatch = useAppDispatch();
+  const user = useAppSelector((state) => state.app.user);
+  const emailSuffix = user?.email || 'guest';
+
+  const keyQuizMode = `vidya_quiz_mode_${emailSuffix}`;
+  const keyUserAnswers = `vidya_quiz_user_answers_${emailSuffix}`;
+  const keyViewResults = `vidya_quiz_view_results_${emailSuffix}`;
+  const keyReviewAnswers = `vidya_quiz_review_answers_${emailSuffix}`;
+
   const [quizData, setQuizData] = useState<Awaited<ReturnType<typeof getQuiz>> | null>(null);
 
   // Quiz Mode Selection: 'practice' | 'test'
-  const [quizMode, setQuizMode] = useState<'practice' | 'test'>(() => {
-    const saved = localStorage.getItem('vidya_quiz_mode');
-    return (saved === 'test' ? 'test' : 'practice') as 'practice' | 'test';
-  });
+  const [quizMode, setQuizMode] = useState<'practice' | 'test'>('practice');
 
   // Modal preferences states
   const [isPrefsOpen, setIsPrefsOpen] = useState(false);
-  const [tempMode, setTempMode] = useState<'practice' | 'test'>(quizMode);
+  const [tempMode, setTempMode] = useState<'practice' | 'test'>('practice');
 
   // States to track Test Mode results screens
-  const [viewResults, setViewResults] = useState<boolean>(() => {
-    return localStorage.getItem('vidya_quiz_view_results') === 'true';
-  });
-  const [reviewAnswers, setReviewAnswers] = useState<boolean>(() => {
-    return localStorage.getItem('vidya_quiz_review_answers') === 'true';
-  });
+  const [viewResults, setViewResults] = useState<boolean>(false);
+  const [reviewAnswers, setReviewAnswers] = useState<boolean>(false);
 
   // User answers record for the current attempt
-  const [userAnswers, setUserAnswers] = useState<any[]>(() => {
-    try {
-      const saved = localStorage.getItem('vidya_quiz_user_answers');
-      return saved ? JSON.parse(saved) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [userAnswers, setUserAnswers] = useState<any[]>([]);
 
   useEffect(() => {
     let mounted = true;
+
+    // Load local storage values scoped to current user
+    const mode = (localStorage.getItem(keyQuizMode) === 'test' ? 'test' : 'practice') as 'practice' | 'test';
+    setQuizMode(mode);
+    setTempMode(mode);
+
+    setViewResults(localStorage.getItem(keyViewResults) === 'true');
+    setReviewAnswers(localStorage.getItem(keyReviewAnswers) === 'true');
+
+    try {
+      const saved = localStorage.getItem(keyUserAnswers);
+      setUserAnswers(saved ? JSON.parse(saved) : []);
+    } catch {
+      setUserAnswers([]);
+    }
 
     const loadQuiz = async () => {
       try {
@@ -61,9 +70,9 @@ export const QuizView: React.FC = () => {
           setUserAnswers([]);
           setViewResults(false);
           setReviewAnswers(false);
-          localStorage.removeItem('vidya_quiz_user_answers');
-          localStorage.removeItem('vidya_quiz_view_results');
-          localStorage.removeItem('vidya_quiz_review_answers');
+          localStorage.removeItem(keyUserAnswers);
+          localStorage.removeItem(keyViewResults);
+          localStorage.removeItem(keyReviewAnswers);
         }
       } catch (error) {
         console.error('Unable to load quiz', error);
@@ -75,7 +84,7 @@ export const QuizView: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [emailSuffix]);
 
   const currentQuestion = quizData?.currentQuestion ?? quizData?.questions?.[quizData?.currentIndex ?? 0];
   const progressPercent = quizData?.progressPercent ?? 0;
@@ -106,7 +115,7 @@ export const QuizView: React.FC = () => {
           };
           const updatedAnswers = [...userAnswers, newAnswer];
           setUserAnswers(updatedAnswers);
-          localStorage.setItem('vidya_quiz_user_answers', JSON.stringify(updatedAnswers));
+          localStorage.setItem(keyUserAnswers, JSON.stringify(updatedAnswers));
         }
       }
     } catch (error) {
@@ -139,9 +148,9 @@ export const QuizView: React.FC = () => {
       setUserAnswers([]);
       setViewResults(false);
       setReviewAnswers(false);
-      localStorage.removeItem('vidya_quiz_user_answers');
-      localStorage.removeItem('vidya_quiz_view_results');
-      localStorage.removeItem('vidya_quiz_review_answers');
+      localStorage.removeItem(keyUserAnswers);
+      localStorage.removeItem(keyViewResults);
+      localStorage.removeItem(keyReviewAnswers);
     } catch (error) {
       console.error('Unable to reset quiz', error);
     }
@@ -154,7 +163,7 @@ export const QuizView: React.FC = () => {
 
   const handleViewResults = () => {
     setViewResults(true);
-    localStorage.setItem('vidya_quiz_view_results', 'true');
+    localStorage.setItem(keyViewResults, 'true');
   };
 
   const getOptionClass = (option: string) => {
@@ -280,7 +289,7 @@ export const QuizView: React.FC = () => {
                 <button
                   onClick={() => {
                     setReviewAnswers(false);
-                    localStorage.removeItem('vidya_quiz_review_answers');
+                    localStorage.removeItem(keyReviewAnswers);
                   }}
                   className="p-2 rounded-xl text-gray-500 hover:bg-gray-100 transition active:scale-95 cursor-pointer font-black text-lg select-none"
                 >
@@ -356,7 +365,7 @@ export const QuizView: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setReviewAnswers(false);
-                  localStorage.removeItem('vidya_quiz_review_answers');
+                  localStorage.removeItem(keyReviewAnswers);
                 }}
                 className="px-5 py-2.5 rounded-xl text-xs font-black text-gray-500 hover:bg-gray-100 transition select-none"
               >
@@ -430,7 +439,7 @@ export const QuizView: React.FC = () => {
                 type="button"
                 onClick={() => {
                   setReviewAnswers(true);
-                  localStorage.setItem('vidya_quiz_review_answers', 'true');
+                  localStorage.setItem(keyReviewAnswers, 'true');
                 }}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 rounded-2xl border-2 border-brand-purple hover:bg-brand-purpleLight/40 px-6 py-3 text-sm font-black text-brand-purple transition active:scale-95 cursor-pointer select-none"
               >
@@ -624,7 +633,7 @@ export const QuizView: React.FC = () => {
                     await handleReset();
                   }
                   setQuizMode(tempMode);
-                  localStorage.setItem('vidya_quiz_mode', tempMode);
+                  localStorage.setItem(keyQuizMode, tempMode);
                   setIsPrefsOpen(false);
                 }}
                 className="px-6 py-2.5 rounded-xl bg-brand-purple text-white hover:bg-brand-purple/95 active:scale-95 text-sm font-extrabold shadow-sm hover:shadow transition-all select-none cursor-pointer"

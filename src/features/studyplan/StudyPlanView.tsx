@@ -152,19 +152,24 @@ export const StudyPlanView: React.FC = () => {
 
   useEffect(() => {
     let mounted = true;
+    setLoading(true);
     const loadAll = async () => {
       try {
         const plan = await getLatestStudyPlan();
-        if (mounted && plan) {
-          setStudyPlan(plan);
-          setShowRawText(false);
-          setRawTextPage(1);
-          setExpandedDescriptions({});
-          const firstUncompletedDay = plan.planData.find(day => 
-            day.tasks.some(task => !task.completed)
-          );
-          if (firstUncompletedDay) {
-            setExpandedDay(firstUncompletedDay.dayNum);
+        if (mounted) {
+          if (plan) {
+            setStudyPlan(plan);
+            setShowRawText(false);
+            setRawTextPage(1);
+            setExpandedDescriptions({});
+            const firstUncompletedDay = plan.planData.find(day => 
+              day.tasks.some(task => !task.completed)
+            );
+            if (firstUncompletedDay) {
+              setExpandedDay(firstUncompletedDay.dayNum);
+            }
+          } else {
+            setStudyPlan(null);
           }
         }
 
@@ -186,7 +191,7 @@ export const StudyPlanView: React.FC = () => {
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [user?.email]);
 
   const handleBack = () => {
     dispatch(setActiveScreen(0));

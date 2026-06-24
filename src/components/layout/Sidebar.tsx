@@ -35,6 +35,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
   const dispatch = useAppDispatch();
   const activeScreen = useAppSelector((state) => state.app.activeScreen);
   const isAuthenticated = useAppSelector((state) => state.app.isAuthenticated);
+  const user = useAppSelector((state) => state.app.user);
   const [isSigningOut, setIsSigningOut] = useState(false);
 
   const menuItems = [
@@ -143,29 +144,46 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, setIsOpen }) => {
         </nav>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-gray-100 shrink-0 space-y-2">
-          {/* Auth status indicator */}
-          {!isAuthenticated && (
-            <button
-              onClick={() => {
-                dispatch(setAuthModalContext('timer'));
-                dispatch(setShowAuthModal(true));
-                setIsOpen(false);
-              }}
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-nunito font-black text-xs text-brand-orange bg-orange-50 hover:bg-orange-100 transition-all border border-orange-100 cursor-pointer outline-none"
-            >
-              <Lock className="w-4 h-4 shrink-0" />
-              <span>Sign In / Sign Up</span>
-            </button>
+        <div className="p-4 border-t border-gray-100 shrink-0">
+          {/* User Profile Card */}
+          {isAuthenticated && user && (
+            <div className="flex items-center gap-3 p-3 bg-gray-50/80 rounded-2xl border border-gray-100/60 mb-2">
+              <div className="w-10 h-10 rounded-xl bg-orange-100 flex items-center justify-center text-xl select-none shadow-sm">
+                {user.avatar || '🧑'}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="font-nunito font-black text-sm text-gray-800 truncate">{user.name}</p>
+                <p className="font-nunito font-bold text-[11px] text-gray-400 truncate">{user.className}</p>
+              </div>
+            </div>
           )}
-          <button
-            onClick={handleLogout}
-            disabled={isSigningOut}
-            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-nunito font-extrabold text-sm text-red-500 hover:bg-red-50/80 transition-all duration-150"
-          >
-            <LogOut className="w-5 h-5 shrink-0" />
-            <span>{isSigningOut ? 'Signing out...' : 'Sign Out'}</span>
-          </button>
+
+          <div className="space-y-2">
+            {/* Auth status indicator */}
+            {!isAuthenticated && (
+              <button
+                onClick={() => {
+                  dispatch(setAuthModalContext('timer'));
+                  dispatch(setShowAuthModal(true));
+                  setIsOpen(false);
+                }}
+                className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl font-nunito font-black text-xs text-brand-orange bg-orange-50 hover:bg-orange-100 transition-all border border-orange-100 cursor-pointer outline-none"
+              >
+                <Lock className="w-4 h-4 shrink-0" />
+                <span>Sign In / Sign Up</span>
+              </button>
+            )}
+            {isAuthenticated && (
+              <button
+                onClick={handleLogout}
+                disabled={isSigningOut}
+                className="w-full flex items-center gap-3 px-4 py-3 rounded-xl font-nunito font-extrabold text-sm text-red-500 hover:bg-red-50/80 transition-all duration-150"
+              >
+                <LogOut className="w-5 h-5 shrink-0" />
+                <span>{isSigningOut ? 'Signing out...' : 'Sign Out'}</span>
+              </button>
+            )}
+          </div>
         </div>
       </aside>
     </>

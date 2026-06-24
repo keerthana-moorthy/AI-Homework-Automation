@@ -41,7 +41,7 @@ export const DashboardView: React.FC = () => {
 
   useEffect(() => {
     void loadDashboardData();
-  }, []);
+  }, [user?.email]);
 
   const handleActionClick = async (targetScreen: number) => {
     if (targetScreen === 4) {
